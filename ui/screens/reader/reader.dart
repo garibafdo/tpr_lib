@@ -560,7 +560,7 @@ Widget _buildTranslationOverlay(BuildContext context) {
                                             AppLocalizations.of(context)!.aiContext,
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              fontSize: 16, // Reduced from default
+                                              fontSize: 18, // Reduced from default
                                               color: Theme.of(context).primaryColor,
                                             ),
                                           ),
@@ -586,7 +586,7 @@ Widget _buildTranslationOverlay(BuildContext context) {
   onWordTap: (word) => _onClickedWord(word, context),
   // Add reduced font size for translation content
   textStyle: TextStyle(
-    fontSize: 20, // Reduced font size
+    fontSize: 22, // Reduced font size
     color: Theme.of(context).textTheme.bodyMedium?.color,
   ),
 ),

@@ -94,7 +94,13 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
   final FocusNode _translationFocusNode = FocusNode();
   final FocusNode _readerFocusNode = FocusNode();
   final ScrollController _translationScrollController = ScrollController();
+  final ScrollController _readerScrollController = ScrollController();
   String? _lastTranslation;
+  final ValueNotifier<Offset> _offset = ValueNotifier(const Offset(12, 80));
+  final ValueNotifier<Size> _size = ValueNotifier(Size(300, 400));
+
+  // Global key for the translation bubble
+  final GlobalKey _translationBubbleKey = GlobalKey();
 
   @override
   void initState() {
@@ -113,6 +119,9 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
     _translationFocusNode.dispose();
     _readerFocusNode.dispose();
     _translationScrollController.dispose();
+    _readerScrollController.dispose();
+    _offset.dispose();
+    _size.dispose();
     super.dispose();
   }
 
@@ -210,6 +219,12 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
                   duration: const Duration(milliseconds: 100),
                   curve: Curves.easeIn,
                 );
+              } else if (_readerFocusNode.hasFocus) {
+                _readerScrollController.animateTo(
+                  _readerScrollController.offset + 200,
+                  duration: const Duration(milliseconds: 100),
+                  curve: Curves.easeIn,
+                );
               }
               return null;
             },
@@ -219,6 +234,12 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
               if (_translationFocusNode.hasFocus) {
                 _translationScrollController.animateTo(
                   _translationScrollController.offset - 200,
+                  duration: const Duration(milliseconds: 100),
+                  curve: Curves.easeIn,
+                );
+              } else if (_readerFocusNode.hasFocus) {
+                _readerScrollController.animateTo(
+                  _readerScrollController.offset - 200,
                   duration: const Duration(milliseconds: 100),
                   curve: Curves.easeIn,
                 );
@@ -280,6 +301,7 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
                         child: LayoutBuilder(
                           builder: (context, constraints) =>
                               SingleChildScrollView(
+                            controller: _readerScrollController, // Added this
                             padding: const EdgeInsets.only(bottom: 24),
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
@@ -370,115 +392,164 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
       valueListenable: context.read<ReaderViewController>().aiTranslationHtml,
       builder: (context, html, _) {
         final showTranslation = html != null && html.isNotEmpty;
+        if (!showTranslation) {
+          return const SizedBox.shrink();
+        }
 
-        return AnimatedPositioned(
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOutCubic,
-          top: showTranslation ? 80 : -400,
-          left: 12,
-          right: 12,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 300),
-            opacity: showTranslation ? 1.0 : 0.0,
-            child: Focus(
-              focusNode: _translationFocusNode,
-              child: Material(
-                elevation: 12,
-                shadowColor: Colors.black.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: backgroundColor,
-                    border: Border.all(color: borderColor),
-                    borderRadius: BorderRadius.circular(16),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        backgroundColor,
-                        backgroundColor.withOpacity(0.95),
-                      ],
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Header with drag handle
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.withOpacity(0.5),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-
-                      // Content
-                      Flexible(
-                        child: SingleChildScrollView(
-                          controller: _translationScrollController,
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.auto_awesome,
-                                    size: 20,
-                                    color: Theme.of(context).primaryColor,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    AppLocalizations.of(context)!.aiContext,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                      color: Theme.of(context).primaryColor,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  IconButton(
-                                    icon: const Icon(Icons.close),
-                                    onPressed: () {
-                                      final rc =
-                                          context.read<ReaderViewController>();
-                                      _lastTranslation =
-                                          rc.aiTranslationHtml.value;
-                                      rc.aiTranslationHtml.value = null;
-                                      _readerFocusNode.requestFocus();
-                                    },
-                                    tooltip:
-                                        AppLocalizations.of(context)!.hide,
-                                  ),
+        return ValueListenableBuilder<Offset>(
+          valueListenable: _offset,
+          builder: (context, offset, _) {
+            // Use the GlobalKey here to ensure a new instance of Draggable is created
+            // when the popup is re-opened, resetting its state.
+            return Positioned(
+              key: _translationBubbleKey, // Assign the GlobalKey here
+              left: offset.dx,
+              top: offset.dy,
+              child: Focus(
+                focusNode: _translationFocusNode,
+                child: ValueListenableBuilder<Size>(
+                  valueListenable: _size,
+                  builder: (context, size, _) {
+                    return Stack(
+                      children: [
+                        Material(
+                          elevation: 12,
+                          shadowColor: Colors.black.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            width: size.width,
+                            height: size.height,
+                            decoration: BoxDecoration(
+                              color: backgroundColor,
+                              border: Border.all(color: borderColor),
+                              borderRadius: BorderRadius.circular(16),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  backgroundColor,
+                                  backgroundColor.withOpacity(0.95),
                                 ],
                               ),
-                              const SizedBox(height: 12),
-                              InteractiveHtmlText(
-                                html: html ?? '',
-                                onWordTap: (word) =>
-                                    _onClickedWord(word, context),
-                              ),
-                            ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Header with drag handle
+                                GestureDetector(
+                                  onPanUpdate: (details) {
+                                    _offset.value = Offset(
+                                      _offset.value.dx + details.delta.dx,
+                                      _offset.value.dy + details.delta.dy,
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: Container(
+                                      width: 40,
+                                      height: 4,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.withOpacity(0.5),
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                // Content
+                                Flexible(
+                                  child: SingleChildScrollView(
+                                    controller: _translationScrollController,
+                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.auto_awesome,
+                                              size: 20,
+                                              color: Theme.of(context).primaryColor,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              AppLocalizations.of(context)!.aiContext,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                color: Theme.of(context).primaryColor,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            IconButton(
+                                              icon: const Icon(Icons.close),
+                                              onPressed: () {
+                                                final rc =
+                                                    context.read<ReaderViewController>();
+                                                _lastTranslation =
+                                                    rc.aiTranslationHtml.value;
+                                                rc.aiTranslationHtml.value = null;
+                                                _readerFocusNode.requestFocus();
+                                              },
+                                              tooltip:
+                                                  AppLocalizations.of(context)!.hide,
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        InteractiveHtmlText(
+                                          html: html ?? '',
+                                          onWordTap: (word) =>
+                                              _onClickedWord(word, context),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                        // Resize handle
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: GestureDetector(
+                            onPanUpdate: (details) {
+                              _size.value = Size(
+                                _size.value.width + details.delta.dx,
+                                _size.value.height + details.delta.dy,
+                              );
+                            },
+                            child: Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).primaryColor.withOpacity(0.5),
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(8),
+                                  bottomRight: Radius.circular(16),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.drag_indicator,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
   }
+
 
   Widget _buildTranslationLoadingOverlay(BuildContext context) {
     return ValueListenableBuilder<bool>(

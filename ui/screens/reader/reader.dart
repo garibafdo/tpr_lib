@@ -95,16 +95,48 @@ class ReaderView extends StatelessWidget implements Searchable {
   @override
   Widget build(BuildContext context) {
     return Shortcuts(
-        shortcuts: <LogicalKeySet, Intent>{
-          LogicalKeySet(
-              Platform.isMacOS
-                  ? LogicalKeyboardKey.meta
-                  : LogicalKeyboardKey.control,
-              LogicalKeyboardKey.keyF): const SearchIntent(),
-        },
-        child: Actions(actions: <Type, Action<Intent>>{
+      shortcuts: <LogicalKeySet, Intent>{
+        LogicalKeySet(
+            Platform.isMacOS
+                ? LogicalKeyboardKey.meta
+                : LogicalKeyboardKey.control,
+            LogicalKeyboardKey.keyF): const SearchIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.control,
+          LogicalKeyboardKey.alt,
+          LogicalKeyboardKey.shift,
+          LogicalKeyboardKey.keyA,
+        ): const TranslateDharmamitraIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.control,
+          LogicalKeyboardKey.alt,
+          LogicalKeyboardKey.keyA,
+        ): const TranslateDharmamitraSimpleIntent(),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
           SearchIntent: SearchAction(this, context),
-        }, child: _getReader(context)));
+          TranslateDharmamitraIntent: CallbackAction<TranslateDharmamitraIntent>(
+              onInvoke: (intent) async {
+            final selectedText =
+                context.read<ReaderViewController>().selection ?? '';
+            await _onAiContextRightClick(selectedText, context,
+                useDharmamitraSimple: false);
+            return null;
+          }),
+          TranslateDharmamitraSimpleIntent:
+              CallbackAction<TranslateDharmamitraSimpleIntent>(
+                  onInvoke: (intent) async {
+            final selectedText =
+                context.read<ReaderViewController>().selection ?? '';
+            await _onAiContextRightClick(selectedText, context,
+                useDharmamitraSimple: true);
+            return null;
+          }),
+        },
+        child: _getReader(context),
+      ),
+    );
   }
 
   Widget _getReader(BuildContext context) {
@@ -535,7 +567,8 @@ class ReaderView extends StatelessWidget implements Searchable {
         );
   }
 
-  Future<void> _onAiContextRightClick(String text, BuildContext context) async {
+  Future<void> _onAiContextRightClick(String text, BuildContext context,
+      {bool? useDharmamitraSimple}) async {
     if (text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -555,19 +588,23 @@ class ReaderView extends StatelessWidget implements Searchable {
       String truncationNote = '';
 
       //~ if (truncatedText.length > 1000) {
-        //~ truncatedText = truncatedText.substring(0, 1000);
-        //~ truncationNote = '''
-//~ <div style="color: orange; font-style: italic; margin-bottom: 8px;"> 
-//~ Note: Only the first 1000 characters were sent for translation. 
-//~ </div> // 
+      //~ truncatedText = truncatedText.substring(0, 1000);
+      //~ truncationNote = '''
+//~ <div style="color: orange; font-style: italic; margin-bottom: 8px;">
+//~ Note: Only the first 1000 characters were sent for translation.
+//~ </div> //
 //~ ''';
       //~ }
 
-      final Map<String, dynamic> result = Prefs.useGeminiDirect
-          //~ ? await _translateWithGemini(truncatedText)
-          ? await _translateWithDharmamitra(truncatedText)
-          //~ : await _translateWithOpenRouter(context, truncatedText);
-          : await _translateWithDharmamitraSimple(truncatedText);
+      final Map<String, dynamic> result = useDharmamitraSimple != null
+          ? (useDharmamitraSimple
+              ? await _translateWithDharmamitraSimple(truncatedText)
+              : await _translateWithDharmamitra(truncatedText))
+          : (Prefs.useGeminiDirect
+              //~ ? await _translateWithGemini(truncatedText)
+              ? await _translateWithDharmamitra(truncatedText)
+              //~ : await _translateWithOpenRouter(context, truncatedText));
+              : await _translateWithDharmamitraSimple(truncatedText));
 
       final htmlOutput = result['text'] ?? '';
       final finishReason = result['finishReason'];
@@ -717,11 +754,12 @@ class ReaderView extends StatelessWidget implements Searchable {
       };
     }
   }
-  
-  
-  Future<Map<String, dynamic>> _translateWithDharmamitra(String inputText) async {
-      final Map<String, dynamic> jsonDataExplain = {
-      'id': '{"input_sentence":"$inputText","input_encoding":"auto","target_lang":"english-explained","do_grammar_explanation":false,"model":"default"}',
+
+  Future<Map<String, dynamic>> _translateWithDharmamitra(
+      String inputText) async {
+    final Map<String, dynamic> jsonDataExplain = {
+      'id':
+          '{"input_sentence":"$inputText","input_encoding":"auto","target_lang":"english-explained","do_grammar_explanation":false,"model":"default"}',
       'messages': [
         {
           'role': 'user',
@@ -740,15 +778,16 @@ class ReaderView extends StatelessWidget implements Searchable {
       'do_grammar_explanation': false,
       'model': 'default',
     };
-  
+
     // Define the headers.
     final Map<String, String> headers = {
       'Content-Type': 'application/json',
     };
-  
+
     // The URL for the POST request.
-    final Uri url = Uri.parse('https://dharmamitra.org/next/api/mitra-translation-stream');
-  
+    final Uri url =
+        Uri.parse('https://dharmamitra.org/next/api/mitra-translation-stream');
+
     try {
       // Make the POST request.
       final http.Response responseExplain = await http.post(
@@ -756,22 +795,21 @@ class ReaderView extends StatelessWidget implements Searchable {
         headers: headers,
         body: jsonEncode(jsonDataExplain),
       );
-  
+
       // Check the status code and handle the response.
       if (responseExplain.statusCode == 200) {
         print('Success!');
         print('Response body: ${responseExplain.body}');
         final String htmlText = md.markdownToHtml(responseExplain.body);
-        
+
         return {
-        'text': htmlText,            
-        'finishReason': 'success',
-      };
-      
+          'text': htmlText,
+          'finishReason': 'success',
+        };
       } else {
         print('Request failed with status: ${responseExplain.statusCode}');
         print('Response body: ${responseExplain.body}');
-        final errorMessage=responseExplain.body;
+        final errorMessage = responseExplain.body;
         return {
           'text':
               '<div style="color: red; font-weight: bold;">$errorMessage</div>',
@@ -786,31 +824,38 @@ class ReaderView extends StatelessWidget implements Searchable {
         'finishReason': 'exception',
       };
     }
-    
   }
-  
-  Future<Map<String, dynamic>> _translateWithDharmamitraSimple(String inputText) async {
-    
+
+  Future<Map<String, dynamic>> _translateWithDharmamitraSimple(
+      String inputText) async {
     final Map<String, dynamic> jsonDataExplain = {
-    'id': '{"input_sentence":"$inputText","input_encoding":"auto","target_lang":"english","do_grammar_explanation":false,"model":"default"}',
-    'messages': [
-      {'role': 'user', 'content': inputText, 'parts': [{'type': 'text', 'text': inputText}]},
-    ],
-    'input_sentence': inputText,
-    'input_encoding': 'auto',
-    'target_lang': 'english',
-    'do_grammar_explanation': false,
-    'model': 'default',
-  };
-  
+      'id':
+          '{"input_sentence":"$inputText","input_encoding":"auto","target_lang":"english","do_grammar_explanation":false,"model":"default"}',
+      'messages': [
+        {
+          'role': 'user',
+          'content': inputText,
+          'parts': [
+            {'type': 'text', 'text': inputText}
+          ]
+        },
+      ],
+      'input_sentence': inputText,
+      'input_encoding': 'auto',
+      'target_lang': 'english',
+      'do_grammar_explanation': false,
+      'model': 'default',
+    };
+
     // Define the headers.
     final Map<String, String> headers = {
       'Content-Type': 'application/json',
     };
-  
+
     // The URL for the POST request.
-    final Uri url = Uri.parse('https://dharmamitra.org/next/api/mitra-translation-stream');
-  
+    final Uri url =
+        Uri.parse('https://dharmamitra.org/next/api/mitra-translation-stream');
+
     try {
       // Make the POST request.
       final http.Response responseExplain = await http.post(
@@ -818,22 +863,21 @@ class ReaderView extends StatelessWidget implements Searchable {
         headers: headers,
         body: jsonEncode(jsonDataExplain),
       );
-  
+
       // Check the status code and handle the response.
       if (responseExplain.statusCode == 200) {
         print('Success!');
         print('Response body: ${responseExplain.body}');
         final String htmlText = md.markdownToHtml(responseExplain.body);
-        
+
         return {
-        'text': htmlText,            
-        'finishReason': 'success',
-      };
-      
+          'text': htmlText,
+          'finishReason': 'success',
+        };
       } else {
         print('Request failed with status: ${responseExplain.statusCode}');
         print('Response body: ${responseExplain.body}');
-        final errorMessage=responseExplain.body;
+        final errorMessage = responseExplain.body;
         return {
           'text':
               '<div style="color: red; font-weight: bold;">$errorMessage</div>',
@@ -848,7 +892,6 @@ class ReaderView extends StatelessWidget implements Searchable {
         'finishReason': 'exception',
       };
     }
-    
   }
 }
 
@@ -858,6 +901,14 @@ abstract class Searchable {
 
 class SearchIntent extends Intent {
   const SearchIntent();
+}
+
+class TranslateDharmamitraIntent extends Intent {
+  const TranslateDharmamitraIntent();
+}
+
+class TranslateDharmamitraSimpleIntent extends Intent {
+  const TranslateDharmamitraSimpleIntent();
 }
 
 class SearchAction extends Action<SearchIntent> {

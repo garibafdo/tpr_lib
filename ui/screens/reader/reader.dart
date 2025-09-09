@@ -464,179 +464,180 @@ ReopenPopupIntent: CallbackAction<ReopenPopupIntent>(
     );
   }
 
-  Widget _buildTranslationOverlay(BuildContext context) {
-    final themeNotifier = context.watch<ThemeChangeNotifier>();
-    final borderColor =
-        themeNotifier.themeData.colorScheme.inverseSurface.getShadeColor();
-    final mediumTheme = themeNotifier.themeData.colorScheme.surfaceVariant;
-    final backgroundColor = switch (Prefs.selectedPageTheme) {
-      PageTheme.light => Colors.white,
-      PageTheme.medium => mediumTheme,
-      PageTheme.dark => Colors.black,
-    };
+Widget _buildTranslationOverlay(BuildContext context) {
+  final themeNotifier = context.watch<ThemeChangeNotifier>();
+  final borderColor =
+      themeNotifier.themeData.colorScheme.inverseSurface.getShadeColor();
+  final mediumTheme = themeNotifier.themeData.colorScheme.surfaceVariant;
+  final backgroundColor = switch (Prefs.selectedPageTheme) {
+    PageTheme.light => Colors.white,
+    PageTheme.medium => mediumTheme,
+    PageTheme.dark => Colors.black,
+  };
 
-    return ValueListenableBuilder<String?>(
-      valueListenable: context.read<ReaderViewController>().aiTranslationHtml,
-      builder: (context, html, _) {
-        final showTranslation = html != null && html.isNotEmpty;
-        if (!showTranslation) {
-          return const SizedBox.shrink();
-        }
+  return ValueListenableBuilder<String?>(
+    valueListenable: context.read<ReaderViewController>().aiTranslationHtml,
+    builder: (context, html, _) {
+      final showTranslation = html != null && html.isNotEmpty;
+      if (!showTranslation) {
+        return const SizedBox.shrink();
+      }
 
-        return ValueListenableBuilder<Offset>(
-          valueListenable: _offset,
-          builder: (context, offset, _) {
-            // Use the GlobalKey here to ensure a new instance of Draggable is created
-            // when the popup is re-opened, resetting its state.
-            return Positioned(
-              key: _translationBubbleKey, // Assign the GlobalKey here
-              left: offset.dx,
-              top: offset.dy,
-              child: Focus(
-                focusNode: _translationFocusNode,
-                child: ValueListenableBuilder<Size>(
-                  valueListenable: _size,
-                  builder: (context, size, _) {
-                    return Stack(
-                      children: [
-                        Material(
-                          elevation: 12,
-                          shadowColor: Colors.black.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            width: size.width,
-                            height: size.height,
-                            decoration: BoxDecoration(
-                              color: backgroundColor,
-                              border: Border.all(color: borderColor),
-                              borderRadius: BorderRadius.circular(16),
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  backgroundColor,
-                                  backgroundColor.withOpacity(0.95),
-                                ],
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Header with drag handle
-                                GestureDetector(
-                                  onPanUpdate: (details) {
-                                    _offset.value = Offset(
-                                      _offset.value.dx + details.delta.dx,
-                                      _offset.value.dy + details.delta.dy,
-                                    );
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    child: Container(
-                                      width: 40,
-                                      height: 4,
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey.withOpacity(0.5),
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                // Content
-                                Flexible(
-                                  child: SingleChildScrollView(
-                                    controller: _translationScrollController,
-                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.auto_awesome,
-                                              size: 20,
-                                              color: Theme.of(context).primaryColor,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              AppLocalizations.of(context)!.aiContext,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
-                                                color: Theme.of(context).primaryColor,
-                                              ),
-                                            ),
-                                            const Spacer(),
-                                            IconButton(
-                                              icon: const Icon(Icons.close),
-                                              onPressed: () {
-                                                final rc =
-                                                    context.read<ReaderViewController>();
-                                                _lastTranslation =
-                                                    rc.aiTranslationHtml.value;
-                                                rc.aiTranslationHtml.value = null;
-                                                _readerFocusNode.requestFocus();
-                                              },
-                                              tooltip:
-                                                  AppLocalizations.of(context)!.hide,
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 12),
-                                        InteractiveHtmlText(
-                                          html: html ?? '',
-                                          onWordTap: (word) =>
-                                              _onClickedWord(word, context),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+      return ValueListenableBuilder<Offset>(
+        valueListenable: _offset,
+        builder: (context, offset, _) {
+          return Positioned(
+            key: _translationBubbleKey,
+            left: offset.dx,
+            top: offset.dy,
+            child: Focus(
+              focusNode: _translationFocusNode,
+              child: ValueListenableBuilder<Size>(
+                valueListenable: _size,
+                builder: (context, size, _) {
+                  return Stack(
+                    children: [
+                      Material(
+                        elevation: 12,
+                        shadowColor: Colors.black.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          width: size.width,
+                          height: size.height,
+                          decoration: BoxDecoration(
+                            color: backgroundColor,
+                            border: Border.all(color: borderColor),
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                backgroundColor,
+                                backgroundColor.withOpacity(0.95),
                               ],
                             ),
                           ),
-                        ),
-                        // Resize handle
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: GestureDetector(
-                            onPanUpdate: (details) {
-                              _size.value = Size(
-                                _size.value.width + details.delta.dx,
-                                _size.value.height + details.delta.dy,
-                              );
-                            },
-                            child: Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).primaryColor.withOpacity(0.5),
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(8),
-                                  bottomRight: Radius.circular(16),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Header with drag handle
+                              GestureDetector(
+                                onPanUpdate: (details) {
+                                  _offset.value = Offset(
+                                    _offset.value.dx + details.delta.dx,
+                                    _offset.value.dy + details.delta.dy,
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  child: Container(
+                                    width: 40,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.withOpacity(0.5),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
                                 ),
                               ),
-                              child: const Icon(
-                                Icons.drag_indicator,
-                                size: 16,
-                                color: Colors.white,
+                              // Content
+                              Flexible(
+                                child: SingleChildScrollView(
+                                  controller: _translationScrollController,
+                                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.auto_awesome,
+                                            size: 20,
+                                            color: Theme.of(context).primaryColor,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            AppLocalizations.of(context)!.aiContext,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16, // Reduced from default
+                                              color: Theme.of(context).primaryColor,
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          IconButton(
+                                            icon: const Icon(Icons.close),
+                                            onPressed: () {
+                                              final rc =
+                                                  context.read<ReaderViewController>();
+                                              _lastTranslation =
+                                                  rc.aiTranslationHtml.value;
+                                              rc.aiTranslationHtml.value = null;
+                                              _readerFocusNode.requestFocus();
+                                            },
+                                            tooltip:
+                                                AppLocalizations.of(context)!.hide,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      InteractiveHtmlText(
+  html: html ?? '',
+  onWordTap: (word) => _onClickedWord(word, context),
+  // Add reduced font size for translation content
+  textStyle: TextStyle(
+    fontSize: 20, // Reduced font size
+    color: Theme.of(context).textTheme.bodyMedium?.color,
+  ),
+),
+                                    ],
+                                  ),
+                                ),
                               ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      // Resize handle
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: GestureDetector(
+                          onPanUpdate: (details) {
+                            _size.value = Size(
+                              _size.value.width + details.delta.dx,
+                              _size.value.height + details.delta.dy,
+                            );
+                          },
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).primaryColor.withOpacity(0.5),
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(8),
+                                bottomRight: Radius.circular(16),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.drag_indicator,
+                              size: 16,
+                              color: Colors.white,
                             ),
                           ),
                         ),
-                      ],
-                    );
-                  },
-                ),
+                      ),
+                    ],
+                  );
+                },
               ),
-            );
-          },
-        );
-      },
-    );
-  }
-
+            ),
+          );
+        },
+      );
+    },
+  );
+}
 
   Widget _buildTranslationLoadingOverlay(BuildContext context) {
     return ValueListenableBuilder<bool>(
@@ -838,54 +839,49 @@ ReopenPopupIntent: CallbackAction<ReopenPopupIntent>(
         );
   }
 
-  Future<void> _onAiContextRightClick(String text, BuildContext context,
-      {bool? useDharmamitraSimple}) async {
-    if (text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('No text selected for translation.'),
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
-      return;
+Future<void> _onAiContextRightClick(String text, BuildContext context,
+    {bool? useDharmamitraSimple}) async {
+  if (text.trim().isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('No text selected for translation.'),
+        behavior: SnackBarBehavior.floating,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+    return;
+  }
+
+  context.read<ReaderViewController>().isTranslating.value = true;
+  try {
+    // Trim and check for 1000-character limit
+    String truncatedText = text.trim();
+    String truncationNote = '';
+
+    final Map<String, dynamic> result = useDharmamitraSimple != null
+        ? (useDharmamitraSimple
+            ? await _translateWithDharmamitraSimple(truncatedText)
+            : await _translateWithDharmamitra(truncatedText))
+        : (Prefs.useGeminiDirect
+            ? await _translateWithDharmamitra(truncatedText)
+            : await _translateWithDharmamitraSimple(truncatedText));
+
+    final htmlOutput = result['text'] ?? '';
+    final finishReason = result['finishReason'];
+
+    // REMOVE THE WARNING BANNER
+    final fullHtml = '$truncationNote$htmlOutput';
+
+    if (context.mounted) {
+      context.read<ReaderViewController>().aiTranslationHtml.value = fullHtml;
     }
-
-    context.read<ReaderViewController>().isTranslating.value = true;
-    try {
-      // Trim and check for 1000-character limit
-      String truncatedText = text.trim();
-      String truncationNote = '';
-
-      final Map<String, dynamic> result = useDharmamitraSimple != null
-          ? (useDharmamitraSimple
-              ? await _translateWithDharmamitraSimple(truncatedText)
-              : await _translateWithDharmamitra(truncatedText))
-          : (Prefs.useGeminiDirect
-              ? await _translateWithDharmamitra(truncatedText)
-              : await _translateWithDharmamitraSimple(truncatedText));
-
-      final htmlOutput = result['text'] ?? '';
-      final finishReason = result['finishReason'];
-
-      final warning = '''
-<div style="color: red; font-weight: bold; margin-bottom: 12px;">
-⚠️  AI Generated. Accuracy is not guaranteed.
-</div>
-''';
-
-      final fullHtml = '$warning$truncationNote$htmlOutput';
-
-      if (context.mounted) {
-        context.read<ReaderViewController>().aiTranslationHtml.value = fullHtml;
-      }
-    } finally {
-      if (context.mounted) {
-        context.read<ReaderViewController>().isTranslating.value = false;
-      }
+  } finally {
+    if (context.mounted) {
+      context.read<ReaderViewController>().isTranslating.value = false;
     }
   }
+}
 
 Future<void> _onInPlaceTranslation(String text, BuildContext context) async {
   if (text.trim().isEmpty) {
@@ -901,20 +897,14 @@ Future<void> _onInPlaceTranslation(String text, BuildContext context) async {
 
   final rc = context.read<ReaderViewController>();
   final currentPage = rc.currentPage.value;
-  final originalContent = rc.getCurrentPageContent(); // Get the original page content
 
   context.read<ReaderViewController>().isTranslating.value = true;
   try {
     final Map<String, dynamic> result = await _translateWithDharmamitraSimple(text.trim());
     final htmlOutput = result['text'] ?? '';
 
-    final warning = '''
-<div style="color: red; font-weight: bold; margin-bottom: 12px;">
-⚠️  AI Generated. Accuracy is not guaranteed.
-</div>
-''';
-
-    final fullHtml = '$warning$htmlOutput';
+    // Wrap the translation in a div with smaller font size for in-place translations
+    final fullHtml = '<div style="font-size: 20px;">$htmlOutput</div>';
 
     if (context.mounted) {
       // Store the translation for this specific page and text
@@ -926,6 +916,7 @@ Future<void> _onInPlaceTranslation(String text, BuildContext context) async {
     }
   }
 }
+
 // REMOVE the _replaceSelectedTextWithTranslation function since we're not using it
   Future<Map<String, dynamic>> _translateWithOpenRouter(
       BuildContext context, String inputText) async {

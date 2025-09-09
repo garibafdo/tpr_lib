@@ -24,9 +24,64 @@ import '../../home/openning_books_provider.dart';
 class ReaderViewController extends ChangeNotifier {
   final aiTranslationHtml = ValueNotifier<String?>(null);
   final ValueNotifier<bool> isTranslating = ValueNotifier(false);
-  //~ HACK: my additions
-  final ValueNotifier<String?> translatedPageHtml = ValueNotifier(null);
-  final ValueNotifier<String?> lastTranslatedHtml = ValueNotifier(null);
+  // Add these new fields (make sure they're declared):
+  final ValueNotifier<Map<int, String>> _translatedSections = ValueNotifier({});
+  final ValueNotifier<String?> _lastTranslatedSection = ValueNotifier(null);
+  final ValueNotifier<int?> _lastTranslatedPage = ValueNotifier(null);
+  
+  // Add these getters to the ReaderViewController class
+int? get lastTranslatedPage => _lastTranslatedPage.value;
+String? get lastTranslatedSection => _lastTranslatedSection.value;
+  
+  
+
+// In ReaderViewController class:
+void setInPlaceTranslation(String html, int pageNumber, String originalText) {
+  final currentTranslations = Map<int, String>.from(_translatedSections.value);
+  currentTranslations[pageNumber] = html;
+  _translatedSections.value = currentTranslations;
+  _lastTranslatedSection.value = originalText;
+  _lastTranslatedPage.value = pageNumber;
+  notifyListeners();
+}
+
+void clearInPlaceTranslation() {
+  if (_lastTranslatedPage.value != null) {
+    final currentTranslations = Map<int, String>.from(_translatedSections.value);
+    currentTranslations.remove(_lastTranslatedPage.value);
+    _translatedSections.value = currentTranslations;
+  }
+  notifyListeners();
+}
+
+String? getTranslatedContent(int pageNumber) {
+  return _translatedSections.value[pageNumber];
+}
+void redoInPlaceTranslation() {
+  if (_lastTranslatedPage.value != null && _lastTranslatedSection.value != null) {
+    // This would need to re-trigger the translation, so we'll handle this differently
+    // For now, let's just keep track that we want to redo
+    _translatedSections.value = Map<int, String>.from(_translatedSections.value);
+    notifyListeners();
+  }
+}
+
+String replaceSelectedText(String originalContent, String selectedText, String translation) {
+  // This is a simplified version - you'll need to implement proper text replacement
+  // that only replaces the specific selected text, not all occurrences
+  return originalContent.replaceFirst(selectedText, translation);
+}
+
+
+
+// Add this method to ReaderViewController class
+String getCurrentPageContent() {
+  final currentPageIndex = _currentPage.value - book.firstPage;
+  if (currentPageIndex >= 0 && currentPageIndex < pages.length) {
+    return pages[currentPageIndex].content;
+  }
+  return '';
+}
 
 
   bool _mounted = true;

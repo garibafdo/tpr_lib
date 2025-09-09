@@ -133,202 +133,191 @@ class _PaliPageWidgetState extends State<PaliPageWidget> {
     return occurrencesBefore;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    int fontSize = context.watch<ReaderFontProvider>().fontSize;
-// Get the font name based on the current script
-//  final fontName = context.read<ScriptLanguageProvider>().getScriptFont();
+@override
+Widget build(BuildContext context) {
+  int fontSize = context.watch<ReaderFontProvider>().fontSize;
+  
+  // Get translated content for this specific page using the new system
+  final translatedContent = context.select<ReaderViewController, String?>(
+    (controller) => controller.getTranslatedContent(widget.pageNumber)
+  );
+  
+  final fontName = FontUtils.getfontName(
+      script: context.read<ScriptLanguageProvider>().currentScript);
 
-    String html = _formatContent(widget.htmlContent, widget.script, context);
+  // Use the translated HTML if available for this specific page, otherwise use the original content
+  String html = translatedContent ?? _formatContent(widget.htmlContent, widget.script, context);
 
-    final fontName = FontUtils.getfontName(
-        script: context.read<ScriptLanguageProvider>().currentScript);
+  return Padding(
+    padding: const EdgeInsets.all(8.0),
+    child: Container(
+      color: Colors.transparent,
+      child: GestureDetector(
+        onTapUp: (details) {
+          final box =
+              _textKey.currentContext?.findRenderObject()! as RenderBox;
 
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Container(
-        color: Colors.transparent,
-        child: GestureDetector(
-          /*onSecondaryTapUp: (details) {
-            final SelectionRegistrar? registrar =
-                SelectionContainer.maybeOf(context);
-            if (registrar is! MultiSelectableSelectionContainerDelegate) {
-              // registrar should be this class if a `SelectionArea` is in the widget tree
-              return;
-            }
-            registrar.dispatchSelectionEvent(const ClearSelectionEvent());
-            registrar.dispatchSelectionEvent(SelectWordSelectionEvent(
-                globalPosition: details.globalPosition));
-            final tapped = registrar.getSelectedContent();
-            // selecting word this way won't trigger the `onSelectionChanged` callback
-            debugPrint('word under right-click: ${tapped?.plainText}');
-          },*/
-          onTapUp: (details) {
-            final box =
-                _textKey.currentContext?.findRenderObject()! as RenderBox;
+          final result = BoxHitTestResult();
+          final offset = box.globalToLocal(details.globalPosition);
+          if (!box.hitTest(result, position: offset)) {
+            return;
+          }
 
-            final result = BoxHitTestResult();
-            final offset = box.globalToLocal(details.globalPosition);
-            if (!box.hitTest(result, position: offset)) {
-              return;
+          for (final entry in result.path) {
+            final target = entry.target;
+            if (entry is! BoxHitTestEntry || target is! RenderParagraph) {
+              continue;
             }
 
-            for (final entry in result.path) {
-              final target = entry.target;
-              if (entry is! BoxHitTestEntry || target is! RenderParagraph) {
-                continue;
-              }
+            final p = target.getPositionForOffset(entry.localPosition);
+            final text =
+                target.text.toPlainText(); //.replaceAll('\ufffc', '');
 
-              final p = target.getPositionForOffset(entry.localPosition);
-              final text =
-                  target.text.toPlainText(); //.replaceAll('\ufffc', '');
+            debugPrint('${_textKey.currentContext?.widget}');
+            if (text.isNotEmpty && p.offset < text.length) {
+              final int offset = p.offset;
 
-              debugPrint('${_textKey.currentContext?.widget}');
-              if (text.isNotEmpty && p.offset < text.length) {
-                final int offset = p.offset;
+              final leftSentence = getLeftSentence(text, offset);
+              final rightSentence = getRightSentence(text, offset);
+              final sentence = leftSentence + rightSentence;
 
-                final leftSentence = getLeftSentence(text, offset);
-                final rightSentence = getRightSentence(text, offset);
-                final sentence = leftSentence + rightSentence;
+              final charUnderTap = text[offset];
+              final leftChars = getLeftCharacters(text, offset);
+              final rightChars = getRightCharacters(text, offset);
 
-                final charUnderTap = text[offset];
-                final leftChars = getLeftCharacters(text, offset);
-                final rightChars = getRightCharacters(text, offset);
+              final word = leftChars + charUnderTap + rightChars;
+              writeHistory(
+                  word, sentence, widget.pageNumber, widget.book!.id);
 
-                final word = leftChars + charUnderTap + rightChars;
-                writeHistory(
-                    word, sentence, widget.pageNumber, widget.book!.id);
+              final textBefore =
+                  text.substring(0, p.offset - leftChars.length);
+              final occurrencesInTextBefore =
+                  word.allMatches(textBefore).length;
+              final wordIndex = findOccurrencesBefore(word, target) +
+                  occurrencesInTextBefore;
 
-                final textBefore =
-                    text.substring(0, p.offset - leftChars.length);
-                final occurrencesInTextBefore =
-                    word.allMatches(textBefore).length;
-                final wordIndex = findOccurrencesBefore(word, target) +
-                    occurrencesInTextBefore;
+              if (word == lookupWord && highlightedWordIndex == wordIndex) {
+                setState(() {
+                  highlightedWord = null;
+                  lookupWord = null;
+                  highlightedWordIndex = null;
+                  _pageToHighlight = null;
+                });
+              } else {
+                setState(() {
+                  widget.onClick?.call(word);
+                  highlightedWord = null;
+                  lookupWord = word;
+                  highlightedWordIndex = wordIndex;
 
-                if (word == lookupWord && highlightedWordIndex == wordIndex) {
-                  setState(() {
-                    highlightedWord = null;
-                    lookupWord = null;
-                    highlightedWordIndex = null;
-                    _pageToHighlight = null;
-                  });
-                } else {
-                  setState(() {
-                    widget.onClick?.call(word);
-                    highlightedWord = null;
-                    lookupWord = word;
-                    highlightedWordIndex = wordIndex;
-
-                    _pageToHighlight = widget.pageNumber;
-                  });
-                }
+                  _pageToHighlight = widget.pageNumber;
+                });
               }
             }
-          },
-          child: HtmlWidget(
-            key: _textKey,
-            html,
-            factoryBuilder: () => _myFactory,
-            textStyle: TextStyle(
-                fontSize: fontSize.toDouble(),
-                inherit: true,
-                fontFamily: fontName),
-            customStylesBuilder: (element) {
-              // if (element.className == 'title' ||
-              //     element.className == 'book' ||
-              //     element.className == 'chapter' ||
-              //     element.className == 'subhead' ||
-              //     element.className == 'nikaya') {
-              //   return {
-              //     'text-align': 'center',
-              //     // 'text-decoration': 'none',
-              //   };
-              // }
-              if (element.localName == 'a') {
-                // print('found a tag: ${element.outerHtml}');
-                final isHighlight =
-                    element.parent!.className.contains('search-highlight') ==
-                        true;
-                if (isHighlight) {
-                  return {'color': '#000', 'text-decoration': 'none'};
-                }
-
-                if (context.read<ThemeChangeNotifier>().isDarkMode) {
-                  return {
-                    'color': 'white',
-                    'text-decoration': 'none',
-                  };
-                } else {
-                  return {
-                    'color': 'black',
-                    'text-decoration': 'none',
-                  };
-                }
+          }
+        },
+        child: HtmlWidget(
+          key: _textKey,
+          html,
+          factoryBuilder: () => _myFactory,
+          textStyle: TextStyle(
+              fontSize: fontSize.toDouble(),
+              inherit: true,
+              fontFamily: fontName),
+          customStylesBuilder: (element) {
+            // if (element.className == 'title' ||
+            //     element.className == 'book' ||
+            //     element.className == 'chapter' ||
+            //     element.className == 'subhead' ||
+            //     element.className == 'nikaya') {
+            //   return {
+            //     'text-align': 'center',
+            //     // 'text-decoration': 'none',
+            //   };
+            // }
+            if (element.localName == 'a') {
+              // print('found a tag: ${element.outerHtml}');
+              final isHighlight =
+                  element.parent!.className.contains('search-highlight') ==
+                      true;
+              if (isHighlight) {
+                return {'color': '#000', 'text-decoration': 'none'};
               }
 
-              if (element.className == 'highlighted') {
-                String styleColor = (Prefs.darkThemeOn) ? "white" : "black";
-                Color c = Theme.of(context).primaryColorLight;
-
-                // Converting the Flutter Color object to a CSS hex string for the text color
-                String colorHex =
-                    '#${c.value.toRadixString(16).padLeft(8, '0').substring(2)}';
-
+              if (context.read<ThemeChangeNotifier>().isDarkMode) {
                 return {
-                  'color': 'inherit', // Uses the default text color
-                  'background-color':
-                      colorHex, // Highlights the text with colorHex
-                  //'font-weight': '500', // Sets the font weight to 500
-                  'text-decoration': 'underline', // Underlines the text
-                  'text-decoration-color':
-                      colorHex, // Sets underline color to match colorHex
+                  'color': 'white',
+                  'text-decoration': 'none',
+                };
+              } else {
+                return {
+                  'color': 'black',
+                  'text-decoration': 'none',
                 };
               }
-              // no style
-              return {'text-decoration': 'none'};
-            },
-            customWidgetBuilder: (element) {
-              if (element.localName == 'span' &&
-                  element.className == 'linebreak') {
-                return const InlineCustomWidget(
-                    child: SizedBox(
-                  height: 0.0,
-                  child: Text('\n '),
-                ));
-              }
+            }
 
-              if (element.localName == 'a' && element.className == 'bookmark') {
-                final bookmark = element.text;
-                return InlineCustomWidget(
-                  child: IconButton(
-                      onPressed: () {
-                        onClickBookmark(bookmark);
-                      },
-                      tooltip: bookmark,
-                      icon: const Icon(Icons.note, color: Colors.red)),
-                );
+            if (element.className == 'highlighted') {
+              String styleColor = (Prefs.darkThemeOn) ? "white" : "black";
+              Color c = Theme.of(context).primaryColorLight;
+
+              // Converting the Flutter Color object to a CSS hex string for the text color
+              String colorHex =
+                  '#${c.value.toRadixString(16).padLeft(8, '0').substring(2)}';
+
+              return {
+                'color': 'inherit', // Uses the default text color
+                'background-color':
+                    colorHex, // Highlights the text with colorHex
+                //'font-weight': '500', // Sets the font weight to 500
+                'text-decoration': 'underline', // Underlines the text
+                'text-decoration-color':
+                    colorHex, // Sets underline color to match colorHex
+              };
+            }
+            // no style
+            return {'text-decoration': 'none'};
+          },
+          customWidgetBuilder: (element) {
+            if (element.localName == 'span' &&
+                element.className == 'linebreak') {
+              return const InlineCustomWidget(
+                  child: SizedBox(
+                height: 0.0,
+                child: Text('\n '),
+              ));
+            }
+
+            if (element.localName == 'a' && element.className == 'bookmark') {
+              final bookmark = element.text;
+              return InlineCustomWidget(
+                child: IconButton(
+                    onPressed: () {
+                      onClickBookmark(bookmark);
+                    },
+                    tooltip: bookmark,
+                    icon: const Icon(Icons.note, color: Colors.red)),
+              );
+            }
+            return null;
+          },
+          onTapUrl: (word) {
+            if (widget.onClick != null) {
+              // #goto is used for scrolling to selected text
+              if (word != '#goto') {
+                setState(() {
+                  highlightedWord = word;
+                  widget.onClick!(word);
+                });
               }
-              return null;
-            },
-            onTapUrl: (word) {
-              if (widget.onClick != null) {
-                // #goto is used for scrolling to selected text
-                if (word != '#goto') {
-                  setState(() {
-                    highlightedWord = word;
-                    widget.onClick!(word);
-                  });
-                }
-              }
-              return false;
-            },
-          ),
+            }
+            return false;
+          },
         ),
       ),
-    );
-  }
-
+    ),
+  );
+}
   void onClickBookmark(String bookmark) {
     showDialog(
       context: context,
@@ -351,35 +340,35 @@ class _PaliPageWidgetState extends State<PaliPageWidget> {
     );
   }
 
-  String _formatContent(String content, Script script, BuildContext context) {
-    content = _removeHiddenTags(content);
-    content = _addLineBreak(content);
+String _formatContent(String content, Script script, BuildContext context) {
+  // REMOVE the translation check from here since we handle it in the build method
+  content = _removeHiddenTags(content);
+  content = _addLineBreak(content);
 
-    if (lookupWord != null) {
-      content = _addUnderline(content, lookupWord!);
-    }
-
-    if (highlightedWord != null &&
-        _pageToHighlight != null &&
-        _pageToHighlight == widget.pageNumber) {
-      content = _addHighlight(content, highlightedWord!);
-    }
-
-    if (!Prefs.isShowAlternatePali) {
-      content = _removeAlternatePali(content);
-    }
-    content = _formatWithUserSetting(content);
-    if (widget.searchText?.isNotEmpty == true) {
-      var textToHighlight = PaliScript.getScriptOf(
-          script: context.read<ScriptLanguageProvider>().currentScript,
-          romanText: widget.searchText!);
-      content = _addHighlight2(content, textToHighlight, context);
-    }
-    // content = _makeClickable(content, script);
-    content = _changeToInlineStyle(content);
-
-    return content;
+  if (lookupWord != null) {
+    content = _addUnderline(content, lookupWord!);
   }
+
+  if (highlightedWord != null &&
+      _pageToHighlight != null &&
+      _pageToHighlight == widget.pageNumber) {
+    content = _addHighlight(content, highlightedWord!);
+  }
+
+  if (!Prefs.isShowAlternatePali) {
+    content = _removeAlternatePali(content);
+  }
+  content = _formatWithUserSetting(content);
+  if (widget.searchText?.isNotEmpty == true) {
+    var textToHighlight = PaliScript.getScriptOf(
+        script: context.read<ScriptLanguageProvider>().currentScript,
+        romanText: widget.searchText!);
+    content = _addHighlight2(content, textToHighlight, context);
+  }
+  content = _changeToInlineStyle(content);
+
+  return content;
+}
 
   String _removeHiddenTags(String content) {
     return content.replaceAll(RegExp(r'<a name="para[^"]*">'), '');

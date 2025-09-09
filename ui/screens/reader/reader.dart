@@ -163,12 +163,28 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
           LogicalKeyboardKey.alt,
           LogicalKeyboardKey.keyA,
         ): const TranslateDharmamitraSimpleIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.control,
+          LogicalKeyboardKey.alt,
+          LogicalKeyboardKey.keyR,
+        ): const TranslateInPlaceIntent(),
         // Keyboard shortcuts for popup and scrolling
         LogicalKeySet(LogicalKeyboardKey.escape): const ClosePopupIntent(),
         LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.escape):
             const ReopenPopupIntent(),
         LogicalKeySet(LogicalKeyboardKey.keyK): const ScrollUpIntent(),
         LogicalKeySet(LogicalKeyboardKey.keyJ): const ScrollDownIntent(),
+        // Vim-like navigation for popup
+        LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.keyH): const MovePopupLeftIntent(),
+        LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.keyJ): const MovePopupDownIntent(),
+        LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.keyK): const MovePopupUpIntent(),
+        LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.keyL): const MovePopupRightIntent(),
+        
+        
+        // ADD THESE NEW SHORTCUTS AFTER THE EXISTING ONES:
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ): const UndoInPlaceTranslationIntent(),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyY): const RedoInPlaceTranslationIntent(),
+      
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
@@ -190,27 +206,44 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
                 useDharmamitraSimple: true);
             return null;
           }),
-          ClosePopupIntent: CallbackAction<ClosePopupIntent>(
-            onInvoke: (intent) {
-              final rc = context.read<ReaderViewController>();
-              if (rc.aiTranslationHtml.value != null) {
-                _lastTranslation = rc.aiTranslationHtml.value;
-                rc.aiTranslationHtml.value = null;
-                _readerFocusNode.requestFocus();
-              }
+          TranslateInPlaceIntent: CallbackAction<TranslateInPlaceIntent>(
+            onInvoke: (intent) async {
+              final selectedText =
+                  context.read<ReaderViewController>().selection ?? '';
+              await _onInPlaceTranslation(selectedText, context);
               return null;
             },
           ),
-          ReopenPopupIntent: CallbackAction<ReopenPopupIntent>(
-            onInvoke: (intent) {
-              if (_lastTranslation != null) {
-                context.read<ReaderViewController>().aiTranslationHtml.value =
-                    _lastTranslation;
-                _translationFocusNode.requestFocus();
-              }
-              return null;
-            },
-          ),
+          // In reader.dart, update the ClosePopupIntent and ReopenPopupIntent handlers:
+
+          // Update the ClosePopupIntent handler:
+ClosePopupIntent: CallbackAction<ClosePopupIntent>(
+  onInvoke: (intent) {
+    final rc = context.read<ReaderViewController>();
+    if (rc.aiTranslationHtml.value != null) {
+      _lastTranslation = rc.aiTranslationHtml.value;
+      rc.aiTranslationHtml.value = null;
+      _readerFocusNode.requestFocus();
+    }
+    // Also handle in-place translation revert - use the new method
+    rc.clearInPlaceTranslation();
+    return null;
+  },
+),
+ReopenPopupIntent: CallbackAction<ReopenPopupIntent>(
+  onInvoke: (intent) {
+    final rc = context.read<ReaderViewController>();
+    if (_lastTranslation != null) {
+      rc.aiTranslationHtml.value = _lastTranslation;
+      _translationFocusNode.requestFocus();
+    }
+    // Also handle in-place translation redo - use the new method
+    if (rc.lastTranslatedPage != null && rc.lastTranslatedSection != null) {
+      _onInPlaceTranslation(rc.lastTranslatedSection!, context);
+    }
+    return null;
+  },
+),
           ScrollDownIntent: CallbackAction<ScrollDownIntent>(
             onInvoke: (intent) {
               if (_translationFocusNode.hasFocus) {
@@ -243,6 +276,56 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
                   duration: const Duration(milliseconds: 100),
                   curve: Curves.easeIn,
                 );
+              }
+              return null;
+            },
+          ),
+          MovePopupLeftIntent: CallbackAction<MovePopupLeftIntent>(
+            onInvoke: (intent) {
+              if (_translationFocusNode.hasFocus) {
+                _offset.value = Offset(_offset.value.dx - 10, _offset.value.dy);
+              }
+              return null;
+            },
+          ),
+          MovePopupRightIntent: CallbackAction<MovePopupRightIntent>(
+            onInvoke: (intent) {
+              if (_translationFocusNode.hasFocus) {
+                _offset.value = Offset(_offset.value.dx + 10, _offset.value.dy);
+              }
+              return null;
+            },
+          ),
+          MovePopupUpIntent: CallbackAction<MovePopupUpIntent>(
+            onInvoke: (intent) {
+              if (_translationFocusNode.hasFocus) {
+                _offset.value = Offset(_offset.value.dx, _offset.value.dy - 10);
+              }
+              return null;
+            },
+          ),
+          // In the Actions widget in reader.dart, update the handlers:
+        UndoInPlaceTranslationIntent: CallbackAction<UndoInPlaceTranslationIntent>(
+          onInvoke: (intent) {
+            final rc = context.read<ReaderViewController>();
+            rc.clearInPlaceTranslation();
+            return null;
+          },
+        ),
+        RedoInPlaceTranslationIntent: CallbackAction<RedoInPlaceTranslationIntent>(
+  onInvoke: (intent) {
+    final rc = context.read<ReaderViewController>();
+    // For redo, we need to re-translate the last section
+    if (rc.lastTranslatedPage != null && rc.lastTranslatedSection != null) {
+      _onInPlaceTranslation(rc.lastTranslatedSection!, context);
+    }
+    return null;
+  },
+),
+          MovePopupDownIntent: CallbackAction<MovePopupDownIntent>(
+            onInvoke: (intent) {
+              if (_translationFocusNode.hasFocus) {
+                _offset.value = Offset(_offset.value.dx, _offset.value.dy + 10);
               }
               return null;
             },
@@ -320,6 +403,8 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
                                               _onShareSelectedText,
                                           onClickedWord: (word) =>
                                               _onClickedWord(word, context),
+                                          onMiddleClickedWord: (word) =>
+                                              _onMiddleClickedWord(word, context),
                                           onSearchedInCurrentBook: (text) =>
                                               _onClickedSearchInCurrent(
                                                   context, text),
@@ -341,6 +426,8 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
                                               _onShareSelectedText,
                                           onClickedWord: (word) =>
                                               _onClickedWord(word, context),
+                                          onMiddleClickedWord: (word) =>
+                                              _onMiddleClickedWord(word, context),
                                           onSearchedInCurrentBook: (text) =>
                                               _onClickedSearchInCurrent(
                                                   context, text),
@@ -650,6 +737,12 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
   }
 
   Future<void> _onClickedWord(String word, BuildContext context) async {
+    // Only show dictionary on middle click, not left click
+    // Left click functionality removed for dictionary
+    return;
+  }
+
+  Future<void> _onMiddleClickedWord(String word, BuildContext context) async {
     // removing punctuations etc.
     // convert to roman if display script is not roman
     word = PaliScript.getRomanScriptFrom(
@@ -794,6 +887,46 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
     }
   }
 
+Future<void> _onInPlaceTranslation(String text, BuildContext context) async {
+  if (text.trim().isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('No text selected for translation.'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+    return;
+  }
+
+  final rc = context.read<ReaderViewController>();
+  final currentPage = rc.currentPage.value;
+  final originalContent = rc.getCurrentPageContent(); // Get the original page content
+
+  context.read<ReaderViewController>().isTranslating.value = true;
+  try {
+    final Map<String, dynamic> result = await _translateWithDharmamitraSimple(text.trim());
+    final htmlOutput = result['text'] ?? '';
+
+    final warning = '''
+<div style="color: red; font-weight: bold; margin-bottom: 12px;">
+⚠️  AI Generated. Accuracy is not guaranteed.
+</div>
+''';
+
+    final fullHtml = '$warning$htmlOutput';
+
+    if (context.mounted) {
+      // Store the translation for this specific page and text
+      rc.setInPlaceTranslation(fullHtml, currentPage, text);
+    }
+  } finally {
+    if (context.mounted) {
+      context.read<ReaderViewController>().isTranslating.value = false;
+    }
+  }
+}
+// REMOVE the _replaceSelectedTextWithTranslation function since we're not using it
   Future<Map<String, dynamic>> _translateWithOpenRouter(
       BuildContext context, String inputText) async {
     final String apiKey = Prefs.openRouterApiKey;
@@ -1078,6 +1211,10 @@ class TranslateDharmamitraSimpleIntent extends Intent {
   const TranslateDharmamitraSimpleIntent();
 }
 
+class TranslateInPlaceIntent extends Intent {
+  const TranslateInPlaceIntent();
+}
+
 class ClosePopupIntent extends Intent {
   const ClosePopupIntent();
 }
@@ -1092,6 +1229,32 @@ class ScrollUpIntent extends Intent {
 
 class ScrollDownIntent extends Intent {
   const ScrollDownIntent();
+}
+
+class MovePopupLeftIntent extends Intent {
+  const MovePopupLeftIntent();
+}
+
+class MovePopupRightIntent extends Intent {
+  const MovePopupRightIntent();
+}
+
+
+class MovePopupUpIntent extends Intent {
+  const MovePopupUpIntent();
+}
+
+class MovePopupDownIntent extends Intent {
+  const MovePopupDownIntent();
+}
+
+// ADD THESE NEW INTENT CLASSES AFTER THE EXISTING ONES:
+class UndoInPlaceTranslationIntent extends Intent {
+  const UndoInPlaceTranslationIntent();
+}
+
+class RedoInPlaceTranslationIntent extends Intent {
+  const RedoInPlaceTranslationIntent();
 }
 
 class SearchAction extends Action<SearchIntent> {

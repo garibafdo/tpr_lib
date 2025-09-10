@@ -184,6 +184,13 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
         // ADD THESE NEW SHORTCUTS AFTER THE EXISTING ONES:
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ): const UndoInPlaceTranslationIntent(),
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyY): const RedoInPlaceTranslationIntent(),
+        
+// TO THIS:
+LogicalKeySet(
+  LogicalKeyboardKey.control,
+  LogicalKeyboardKey.alt,
+  LogicalKeyboardKey.keyW,
+): const TranslateDharmamitraHindiIntent()
       
       },
       child: Actions(
@@ -206,6 +213,16 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
                 useDharmamitraSimple: true);
             return null;
           }),
+          
+           // ADD THIS NEW ACTION HANDLER RIGHT AFTER THE ABOVE:
+    TranslateDharmamitraHindiIntent:
+        CallbackAction<TranslateDharmamitraHindiIntent>(
+            onInvoke: (intent) async {
+      final selectedText =
+          context.read<ReaderViewController>().selection ?? '';
+      await _onAiContextRightClickHindi(selectedText, context);
+      return null;
+    }),
           TranslateInPlaceIntent: CallbackAction<TranslateInPlaceIntent>(
             onInvoke: (intent) async {
               final selectedText =
@@ -883,6 +900,38 @@ Future<void> _onAiContextRightClick(String text, BuildContext context,
   }
 }
 
+
+// Add this method in the _ReaderViewState class, after the existing _onAiContextRightClick method:
+Future<void> _onAiContextRightClickHindi(String text, BuildContext context) async {
+  if (text.trim().isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('No text selected for translation.'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+    return;
+  }
+
+  context.read<ReaderViewController>().isTranslating.value = true;
+  try {
+    final Map<String, dynamic> result = await _translateWithDharmamitraHindi(text.trim());
+    final htmlOutput = result['text'] ?? '';
+    final finishReason = result['finishReason'];
+
+    final fullHtml = htmlOutput;
+
+    if (context.mounted) {
+      context.read<ReaderViewController>().aiTranslationHtml.value = fullHtml;
+    }
+  } finally {
+    if (context.mounted) {
+      context.read<ReaderViewController>().isTranslating.value = false;
+    }
+  }
+}
+
 Future<void> _onInPlaceTranslation(String text, BuildContext context) async {
   if (text.trim().isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1184,7 +1233,80 @@ Future<void> _onInPlaceTranslation(String text, BuildContext context) async {
       };
     }
   }
+  
+  // Add this translation method (after the existing _translateWithDharmamitraSimple method):
+Future<Map<String, dynamic>> _translateWithDharmamitraHindi(String inputText) async {
+  final Map<String, dynamic> jsonDataExplain = {
+    'id':
+        '{"input_sentence":"$inputText","input_encoding":"auto","target_lang":"hindi","do_grammar_explanation":false,"model":"default"}',
+    'messages': [
+      {
+        'role': 'user',
+        'content': inputText,
+        'parts': [
+          {'type': 'text', 'text': inputText}
+        ]
+      },
+    ],
+    'input_sentence': inputText,
+    'input_encoding': 'auto',
+    'target_lang': 'hindi', // Changed from 'english' to 'hindi'
+    'do_grammar_explanation': false,
+    'model': 'default',
+  };
+
+  // Define the headers.
+  final Map<String, String> headers = {
+    'Content-Type': 'application/json',
+  };
+
+  // The URL for the POST request.
+  final Uri url =
+      Uri.parse('https://dharmamitra.org/next/api/mitra-translation-stream');
+
+  try {
+    // Make the POST request.
+    final http.Response responseExplain = await http.post(
+      url,
+      headers: headers,
+      body: jsonEncode(jsonDataExplain),
+    );
+
+    // Check the status code and handle the response.
+    if (responseExplain.statusCode == 200) {
+      print('Success!');
+      print('Response body: ${responseExplain.body}');
+      final String htmlText = md.markdownToHtml(responseExplain.body);
+
+      return {
+        'text': htmlText,
+        'finishReason': 'success',
+      };
+    } else {
+      print('Request failed with status: ${responseExplain.statusCode}');
+      print('Response body: ${responseExplain.body}');
+      final errorMessage = responseExplain.body;
+      return {
+        'text':
+            '<div style="color: red; font-weight: bold;">$errorMessage</div>',
+        'finishReason': 'error',
+      };
+    }
+  } catch (e) {
+    print('An error occurred: $e');
+    return {
+      'text':
+          '<div style="color: red; font-weight: bold;">Exception: $e</div>',
+      'finishReason': 'exception',
+    };
+  }
 }
+
+
+}
+
+
+
 
 abstract class Searchable {
   void onSearchRequested(BuildContext context);
@@ -1237,6 +1359,10 @@ class MovePopupUpIntent extends Intent {
 
 class MovePopupDownIntent extends Intent {
   const MovePopupDownIntent();
+}
+
+class TranslateDharmamitraHindiIntent extends Intent {
+  const TranslateDharmamitraHindiIntent();
 }
 
 // ADD THESE NEW INTENT CLASSES AFTER THE EXISTING ONES:

@@ -96,8 +96,8 @@ class _ReaderViewState extends State<ReaderView> implements Searchable {
   final ScrollController _translationScrollController = ScrollController();
   final ScrollController _readerScrollController = ScrollController();
   String? _lastTranslation;
-  final ValueNotifier<Offset> _offset = ValueNotifier(const Offset(12, 80));
-  final ValueNotifier<Size> _size = ValueNotifier(Size(300, 400));
+  final ValueNotifier<Offset> _offset = ValueNotifier(const Offset(12, 40));
+  final ValueNotifier<Size> _size = ValueNotifier(Size(900, 400));
 
   // Global key for the translation bubble
   final GlobalKey _translationBubbleKey = GlobalKey();
@@ -577,7 +577,7 @@ Widget _buildTranslationOverlay(BuildContext context) {
                                             AppLocalizations.of(context)!.aiContext,
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              fontSize: 18, // Reduced from default
+                                              fontSize: 24, // Reduced from default
                                               color: Theme.of(context).primaryColor,
                                             ),
                                           ),
@@ -603,7 +603,7 @@ Widget _buildTranslationOverlay(BuildContext context) {
   onWordTap: (word) => _onClickedWord(word, context),
   // Add reduced font size for translation content
   textStyle: TextStyle(
-    fontSize: 22, // Reduced font size
+    fontSize: 24, // Reduced font size
     color: Theme.of(context).textTheme.bodyMedium?.color,
   ),
 ),
@@ -953,7 +953,7 @@ Future<void> _onInPlaceTranslation(String text, BuildContext context) async {
     final htmlOutput = result['text'] ?? '';
 
     // Wrap the translation in a div with smaller font size for in-place translations
-    final fullHtml = '<div style="font-size: 20px;">$htmlOutput</div>';
+    final fullHtml = '<div style="font-size: 24px;">$htmlOutput</div>';
 
     if (context.mounted) {
       // Store the translation for this specific page and text

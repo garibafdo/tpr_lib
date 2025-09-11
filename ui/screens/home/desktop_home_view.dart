@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Add this import
 import 'package:provider/provider.dart';
 import 'package:tipitaka_pali/data/constants.dart';
 import 'package:tipitaka_pali/providers/navigation_provider.dart';
@@ -27,7 +28,6 @@ class _DesktopHomeViewState extends State<DesktopHomeView>
   @override
   void initState() {
     super.initState();
-    // width = Prefs.panelSize.toDouble();
     panelWidth = Prefs.panelWidth;
     navigationProvider = context.read<NavigationProvider>();
 
@@ -61,89 +61,96 @@ class _DesktopHomeViewState extends State<DesktopHomeView>
       _animationController.reverse();
     } else {
       _animationController.forward();
-      // _animatedIconController.forward();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // RydMike: Avoid things like this, prefer using themes correctly!
-    //   But OK sometimes needed, but rarely. Not sure why this is used in
-    //   conditional build below. Looks like some temp experiment. :)
-    return Stack(
-      children: [
-        Row(
-          children: [
-            // Navigation Rail
-            Container(
-              decoration: const BoxDecoration(
-                  border: Border(right: BorderSide(color: Colors.grey))),
-              child: const DeskTopNavigationBar(),
-            ),
-            // Navigation Pane
-            SizeTransition(
-              sizeFactor: _tween.animate(_animation),
-              axis: Axis.horizontal,
-              axisAlignment: 1,
-              child: SizedBox(
-                width: panelWidth,
-                child: const DetailNavigationPane(navigationCount: 7),
+    // Wrap the entire build method content with Shortcuts and Actions
+    return Shortcuts(
+      shortcuts: <LogicalKeySet, Intent>{
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyB):
+            const _TogglePaneIntent(),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          _TogglePaneIntent: CallbackAction<_TogglePaneIntent>(
+            onInvoke: (Intent intent) =>
+                navigationProvider.toggleNavigationPane(),
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Stack(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    decoration: const BoxDecoration(
+                        border: Border(right: BorderSide(color: Colors.grey))),
+                    child: const DeskTopNavigationBar(),
+                  ),
+                  SizeTransition(
+                    sizeFactor: _tween.animate(_animation),
+                    axis: Axis.horizontal,
+                    axisAlignment: 1,
+                    child: SizedBox(
+                      width: panelWidth,
+                      child: const DetailNavigationPane(navigationCount: 7),
+                    ),
+                  ),
+                  MouseRegion(
+                    cursor: SystemMouseCursors.resizeLeftRight,
+                    child: GestureDetector(
+                      onHorizontalDragUpdate: (DragUpdateDetails details) {
+                        setState(() {
+                          final screenWidth =
+                              MediaQuery.of(context).size.width;
+                          final maxWidth = screenWidth - 300;
+                          const minWidth = 250.0;
+                          panelWidth += details.primaryDelta ?? 0;
+                          panelWidth = panelWidth.clamp(minWidth, maxWidth);
+                          Prefs.panelWidth = panelWidth;
+                        });
+                      },
+                      child: Container(
+                        alignment: Alignment.centerRight,
+                        color: Colors.transparent,
+                        width: 15,
+                        child: Container(
+                          width: 3,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Expanded(child: ReaderContainer()),
+                ],
               ),
-            ),
-// drag bar
-            MouseRegion(
-              cursor: SystemMouseCursors.resizeLeftRight,
-              child: GestureDetector(
-                onHorizontalDragUpdate: (DragUpdateDetails details) {
-                  setState(() {
-                    final screenWidth = MediaQuery.of(context)
-                        .size
-                        .width; // Get the current window width
-                    final maxWidth = screenWidth -
-                        300; // Assuming you want to leave at least 300px for the rest of the content
-                    const minWidth = 250.0;
-
-                    panelWidth += details.primaryDelta ?? 0;
-                    panelWidth = panelWidth.clamp(
-                        minWidth, maxWidth); // Apply dynamic constraints
-                    Prefs.panelWidth =
-                        panelWidth; // Optionally save the new width to preferences
-                  });
-                },
-                child: Container(
-                  alignment: Alignment.centerRight,
-                  color: Colors.transparent, // Transparent outer container
-                  width: 15, // Larger area for easier mouse interaction
-                  child: Container(
-                    width: 3,
-                    color: Colors.grey, // Visible drag handle
+              Align(
+                alignment: Alignment.bottomLeft,
+                child: SizedBox(
+                  width: navigationBarWidth,
+                  height: 64,
+                  child: Center(
+                    child: IconButton(
+                        onPressed: () =>
+                            context.read<NavigationProvider>().toggleNavigationPane(),
+                        icon: AnimatedIcon(
+                          icon: AnimatedIcons.arrow_menu,
+                          progress: _animationController.view,
+                        )),
                   ),
                 ),
-              ),
-            ),
-
-            // reader view
-            const Expanded(child: ReaderContainer()),
-          ],
-        ),
-        Align(
-          alignment: Alignment.bottomLeft,
-          child: SizedBox(
-            width: navigationBarWidth,
-            height: 64,
-            child: Center(
-              child: IconButton(
-                  onPressed: () =>
-                      context.read<NavigationProvider>().toggleNavigationPane(),
-                  icon: AnimatedIcon(
-                    icon: AnimatedIcons.arrow_menu,
-                    // progress: _animatedIconController,
-                    progress: _animationController.view,
-                  )),
-            ),
+              )
+            ],
           ),
-        )
-      ],
+        ),
+      ),
     );
   }
+}
+
+class _TogglePaneIntent extends Intent {
+  const _TogglePaneIntent();
 }

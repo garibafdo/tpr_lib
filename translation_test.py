@@ -3,17 +3,17 @@ import requests
 import json
 import time
 import os
+import re
 from pathlib import Path
+from tqdm import tqdm
 
-class TranslationTest:
+
+class SuttaTranslator:
     def __init__(self, main_db_path, translation_db_path):
-        # Expand the ~ in the path
         main_db_path = os.path.expanduser(main_db_path)
         
-        # Check if main database exists
         if not os.path.exists(main_db_path):
             print(f"❌ Main database not found at: {main_db_path}")
-            print("Please check the path and try again.")
             return
         
         print(f"📁 Main database: {main_db_path}")
@@ -22,768 +22,576 @@ class TranslationTest:
         self.main_db = sqlite3.connect(main_db_path)
         self.translation_db = sqlite3.connect(translation_db_path)
         self.setup_translation_db()
-        
+    
     def setup_translation_db(self):
-        """Create separate translation database"""
+        """Create translation database with updated schema"""
+        cursor = self.translation_db.cursor()
+        
+        # Check if sutta_name column exists
+        cursor.execute("PRAGMA table_info(translations)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'sutta_name' not in columns:
+            print("🔄 Updating translations table schema...")
+            # Create new table with updated schema
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS translations_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sutta_name TEXT,
+                original_book_id TEXT,
+                original_page_number INTEGER,
+                original_paragraph TEXT,
+                content_type TEXT,
+                original_content TEXT,
+                translated_content TEXT,
+                language TEXT DEFAULT 'en',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+            
+            # Copy existing data if any
+            cursor.execute("""
+            INSERT INTO translations_new 
+            (original_book_id, original_page_number, original_paragraph, content_type, original_content, translated_content, language, created_at)
+            SELECT original_book_id, original_page_number, original_paragraph, content_type, original_content, translated_content, language, created_at
+            FROM translations
+            """)
+            
+            # Drop old table and rename new one
+            cursor.execute("DROP TABLE translations")
+            cursor.execute("ALTER TABLE translations_new RENAME TO translations")
+            
+            self.translation_db.commit()
+            print("✅ Translation database schema updated")
+        else:
+            print("✅ Translation database schema is current")    
+    def get_sutta_info(self, sutta_name):
+        """Get sutta location info from database"""
+        cursor = self.main_db.cursor()
+        
+        cursor.execute("""
+        SELECT book_id, page_number, name 
+        FROM suttas 
+        WHERE name LIKE ? OR simple LIKE ?
+        """, (f'%{sutta_name}%', f'%{sutta_name}%'))
+        
+        results = cursor.fetchall()
+        
+        if results:
+            print(f"📍 Found sutta '{sutta_name}':")
+            for book_id, page_num, name in results:
+                print(f"   {book_id} starting at page {page_num}: {name}")
+            return results
+        else:
+            print(f"❌ Sutta '{sutta_name}' not found")
+            return []
+    
+    
+    def translate_complete_sutta(self, sutta_name, mula_book_id=None, start_paragraph=None, end_paragraph=None, commentary_book_id=None):
+        """Generic function to translate any complete sutta"""
+        print(f"🚀 TRANSLATING COMPLETE {sutta_name.upper()}")
+        print("=" * 60)
+        
+        # Auto-detect sutta info if not provided
+        if not mula_book_id:
+            sutta_info = self.get_sutta_info(sutta_name)
+            if not sutta_info:
+                return
+            mula_book_id, start_page, sutta_name = sutta_info[0]
+            start_paragraph, end_paragraph = self.find_sutta_paragraph_range(mula_book_id, start_page)
+        
+        if not commentary_book_id:
+            # Derive commentary book from mula book (mula_di_01 → attha_di_01)
+            commentary_book_id = mula_book_id.replace('mula_', 'attha_')
+        
+        print(f"📖 Mula: {mula_book_id} paragraphs {start_paragraph}-{end_paragraph}")
+        print(f"📝 Commentary: {commentary_book_id}")
+        
+        cursor = self.main_db.cursor()
+        
+        # Get UNIQUE mula content
+        cursor.execute("""
+        SELECT DISTINCT pa.content
+        FROM paragraphs p
+        JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+        WHERE p.book_id = ? 
+        AND p.paragraph_number BETWEEN ? AND ?
+        ORDER BY p.paragraph_number
+        """, (mula_book_id, start_paragraph, end_paragraph))
+        
+        mula_contents = cursor.fetchall()
+        
+        # Combine unique mula content
+        full_mula_text = ""
+        for (content,) in mula_contents:
+            clean_content = re.sub(r'<[^>]+>', '', content)
+            if sutta_name.lower() not in clean_content.lower() or full_mula_text == "":
+                full_mula_text += clean_content + "\n\n"
+        
+        print(f"📖 {sutta_name} Mula: {len(full_mula_text)} chars")
+        
+        # Get UNIQUE commentary content
+        cursor.execute("""
+        SELECT DISTINCT pa.content
+        FROM paragraph_mapping pm
+        JOIN pages pa ON pa.bookid = pm.exp_book_id AND pa.page = pm.exp_page_number
+        WHERE pm.base_book_id = ? 
+        AND pm.paragraph BETWEEN ? AND ?
+        AND pm.exp_book_id = ?
+        ORDER BY pm.exp_page_number
+        """, (mula_book_id, start_paragraph, end_paragraph, commentary_book_id))
+        
+        commentary_contents = cursor.fetchall()
+        
+        # Combine unique commentary content
+        full_commentary_text = ""
+        for (content,) in commentary_contents:
+            clean_content = re.sub(r'<[^>]+>', '', content)
+            full_commentary_text += clean_content + "\n\n"
+        
+        print(f"📝 {sutta_name} Commentary: {len(full_commentary_text)} chars")
+        
+        # Smart chunking for mula text
+        mula_chunks = self.chunk_text(full_mula_text, max_chars=3500)
+        print(f"📦 Mula split into {len(mula_chunks)} chunks")
+        
+        # Translate mula chunks
+        mula_translations = []
+        with tqdm(total=len(mula_chunks), desc="Mula chunks") as pbar:
+          for i, chunk in enumerate(tqdm(mula_chunks, desc="Translating mula")):
+              chunk_id = f"{sutta_name}_mula_{i+1}"
+              
+              # Check if already translated
+              if self.is_chunk_translated(sutta_name, chunk_id, 'mula'):
+                  print(f"⏭️  Skipping already translated: {chunk_id}")
+                  existing = self.get_existing_translation(sutta_name, chunk_id, 'mula')
+                  mula_translations.append(existing)
+                  continue
+              
+              print(f"\n🌐 Translating Mula Chunk {i+1}/{len(mula_chunks)}...")
+              translation = self.translate_text(chunk, f"{sutta_name} Mula Part {i+1}")
+              
+              # Save with chunk-level tracking
+              self.save_translation_chunk(
+                  sutta_name, mula_book_id, start_paragraph, chunk_id,
+                  'mula', chunk, translation
+              )
+              
+              mula_translations.append(translation)
+              if i < len(mula_chunks) - 1:
+                  time.sleep(3)
+              pbar.update(1)
+          
+        full_mula_translation = "\n\n".join(mula_translations)
+        
+        time.sleep(5)
+        
+        # Smart chunking for commentary text
+        commentary_chunks = self.chunk_text(full_commentary_text, max_chars=3500)
+        print(f"📦 Commentary split into {len(commentary_chunks)} chunks")
+        
+        # Translate commentary chunks
+        commentary_translations = []
+        with tqdm(total=len(commentary_chunks), desc="Commentary chunks") as pbar:
+          for i, chunk in enumerate(commentary_chunks):
+              chunk_id = f"{sutta_name}_commentary_{i+1}"
+              
+              # Check if already translated
+              if self.is_chunk_translated(sutta_name, chunk_id, 'commentary'):
+                  print(f"⏭️  Skipping already translated: {chunk_id}")
+                  existing = self.get_existing_translation(sutta_name, chunk_id, 'commentary')
+                  commentary_translations.append(existing)
+                  continue
+              
+              print(f"\n🌐 Translating Commentary Chunk {i+1}/{len(commentary_chunks)}...")
+              translation = self.translate_text(chunk, f"{sutta_name} Commentary Part {i+1}")
+              
+              # Save with chunk-level tracking
+              self.save_translation_chunk(
+                  sutta_name, commentary_book_id, start_paragraph, chunk_id,
+                  'commentary', chunk, translation
+              )
+              
+              commentary_translations.append(translation)
+              if i < len(commentary_chunks) - 1:
+                  time.sleep(3)
+              pbar.update(1)
+          
+        full_commentary_translation = "\n\n".join(commentary_translations)
+        
+        # Generate HTML
+        self.generate_sutta_html(
+            sutta_name,
+            full_mula_text, 
+            full_mula_translation,
+            full_commentary_text,
+            full_commentary_translation
+        )
+        
+        print(f"\n🎉 {sutta_name.upper()} TRANSLATION COMPLETE!")
+        print(f"📊 Total chunks: {len(mula_chunks)} mula + {len(commentary_chunks)} commentary")
+    
+    def chunk_text(self, text, max_chars=3500):
+        """Split text into chunks at paragraph boundaries"""
+        if len(text) <= max_chars:
+            return [text]
+        
+        chunks = []
+        current_chunk = ""
+        
+        paragraphs = text.split('\n\n')
+        
+        for para in paragraphs:
+            if len(current_chunk) + len(para) > max_chars and current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = para
+            else:
+                if current_chunk:
+                    current_chunk += '\n\n' + para
+                else:
+                    current_chunk = para
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
+        return chunks
+    
+    def find_sutta_paragraph_range(self, book_id, start_page):
+        """Find paragraph range for a sutta starting at given page"""
+        cursor = self.main_db.cursor()
+        
+        # Get the actual start paragraph from the start page
+        cursor.execute("""
+        SELECT MIN(paragraph_number) 
+        FROM paragraphs 
+        WHERE book_id = ? AND page_number >= ?
+        """, (book_id, start_page))
+        
+        start_para = cursor.fetchone()[0]
+        
+        # Find the next sutta by looking for sutta markers after our start
+        cursor.execute("""
+        SELECT p.paragraph_number, p.page_number, substr(pa.content, 1, 200)
+        FROM paragraphs p
+        JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+        WHERE p.book_id = ? 
+        AND p.paragraph_number > ?
+        AND (pa.content LIKE '%suttaṃ%' OR pa.content LIKE '%suttavaṇṇanā%')
+        AND pa.content NOT LIKE '%brahmajāla%'  
+        ORDER BY p.paragraph_number
+        LIMIT 1
+        """, (book_id, start_para))
+        
+        next_sutta = cursor.fetchone()
+        
+        if next_sutta:
+            end_para = next_sutta[0] - 1
+            print(f"   Found next sutta at paragraph {next_sutta[0]}")
+        else:
+            # If no next sutta found, go much further
+            cursor.execute("""
+            SELECT MAX(paragraph_number) 
+            FROM paragraphs 
+            WHERE book_id = ? AND paragraph_number > ?
+            """, (book_id, start_para))
+            
+            max_para = cursor.fetchone()[0]
+            # Use a reasonable range, not just 1 paragraph
+            end_para = min(start_para + 200, max_para) if max_para else start_para + 200
+            print(f"   Using estimated range to paragraph {end_para}")
+        
+        print(f"   Paragraph range: {start_para} to {end_para}")
+        return start_para, end_para
+    
+    def translate_text(self, text, context=""):
+        """Translate text with streaming progress (clean output)"""
+        print(f"🌐 Translating: {context}")
+        print(f"   📝 Text length: {len(text)} characters")
+        
+        payload = {
+            'input_sentence': text,
+            'input_encoding': 'auto', 
+            'target_lang': 'english',
+            'do_grammar_explanation': False,
+            'model': 'default'
+        }
+        
+        try:
+            print("   📤 Sending request...", end="", flush=True)
+            response = requests.post(
+                "https://dharmamitra.org/next/api/mitra-translation-stream",
+                headers={'Content-Type': 'application/json'},
+                data=json.dumps(payload),
+                timeout=120,
+                stream=True
+            )
+            
+            if response.status_code == 200:
+                print(" ✅ Request accepted", end="", flush=True)
+                
+                # ~ full_response = ""
+                last_update = 0
+                
+                # ~ for chunk in response.iter_content(decode_unicode=True, chunk_size=1):
+                    # ~ if chunk:
+                        # ~ chunk_text = chunk.decode('utf-8') if isinstance(chunk, bytes) else chunk
+                        # ~ full_response += chunk_text
+                        
+                        # ~ # Update progress every 50 chars (overwrites same line)
+                        # ~ if len(full_response) - last_update >= 50:
+                            # ~ print(f"\r   📤 Received: {len(full_response)} chars...", end="", flush=True)
+                            # ~ last_update = len(full_response)
+                
+                full_response = ""
+                with tqdm(total=len(text), desc="Receiving", unit="char", leave=False) as pbar:
+                    for chunk in response.iter_content(decode_unicode=True, chunk_size=100):
+                        if chunk:
+                            chunk_text = chunk.decode('utf-8') if isinstance(chunk, bytes) else chunk
+                            full_response += chunk_text
+                            pbar.update(len(chunk_text))
+                translation = full_response.strip()
+                print(f"\r   ✅ Translation complete: {len(translation)} characters")
+                return translation
+                
+            else:
+                print(f"\n❌ API error: {response.status_code}")
+                return f"[TRANSLATION FAILED: {response.status_code}]"
+                
+        except Exception as e:
+            print(f"\n❌ Request failed: {e}")
+            return f"[TRANSLATION ERROR: {e}]"
+            
+    def save_translation_chunk(self, sutta_name, book_id, page_num, chunk_id, content_type, original, translated):
+        """Save translation with chunk-level tracking"""
         cursor = self.translation_db.cursor()
         
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS translations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            original_book_id TEXT,
-            original_page_number INTEGER,
-            original_paragraph TEXT,
-            content_type TEXT,  -- 'mula' or 'commentary'
-            original_content TEXT,
-            translated_content TEXT,
-            language TEXT DEFAULT 'en',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
+        INSERT INTO translations 
+        (sutta_name, original_book_id, original_page_number, original_paragraph, content_type, original_content, translated_content)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (sutta_name, book_id, page_num, chunk_id, content_type, original, translated))
         
         self.translation_db.commit()
-        print("✅ Translation database setup complete")
+        print(f"💾 Saved {content_type} chunk: {chunk_id}")
     
-    def examine_paragraph_mapping(self):
-        """Examine the paragraph_mapping table to understand mula-commentary relationships"""
-        cursor = self.main_db.cursor()
+    def is_chunk_translated(self, sutta_name, chunk_id, content_type):
+        """Check if chunk is already successfully translated"""
+        cursor = self.translation_db.cursor()
         
-        print("🔍 Examining paragraph_mapping table...")
-        
-        # Get mapping for DN2 specifically
         cursor.execute("""
-        SELECT paragraph, base_book_id, base_page_number, exp_book_id, exp_page_number
-        FROM paragraph_mapping 
-        WHERE base_book_id = 'mula_di_02' AND exp_book_id = 'attha_di_02'
-        ORDER BY paragraph
-        LIMIT 20
-        """)
+        SELECT translated_content FROM translations 
+        WHERE sutta_name = ? AND original_paragraph = ? AND content_type = ?
+        AND (translated_content NOT LIKE '%[TRANSLATION FAILED%' OR translated_content IS NULL)
+        AND (translated_content NOT LIKE '%[TRANSLATION ERROR%' OR translated_content IS NULL) 
+        AND (translated_content != '' OR translated_content IS NULL)
+        """, (sutta_name, chunk_id, content_type))
         
-        mappings = cursor.fetchall()
-        
-        print(f"📋 Found {len(mappings)} paragraph mappings for DN2:")
-        for mapping in mappings:
-            paragraph, base_book, base_page, exp_book, exp_page = mapping
-            print(f"   Paragraph {paragraph}: mula_di_02 page {base_page} → attha_di_02 page {exp_page}")
-        
-        return mappings
+        result = cursor.fetchone()
+        return result is not None and result[0] and len(result[0]) > 0
     
-    def get_matching_commentary(self, base_book_id, base_page, base_paranum, commentary_book_id):
-        """Get commentary paragraphs that match the given mula paragraph using the mapping table"""
-        cursor = self.main_db.cursor()
+    def get_existing_translation(self, sutta_name, chunk_id, content_type):
+        """Get existing translation for a chunk"""
+        cursor = self.translation_db.cursor()
         
-        # First, try to find the mapping
         cursor.execute("""
-        SELECT exp_page_number 
-        FROM paragraph_mapping 
-        WHERE base_book_id = ? AND base_page_number = ? AND exp_book_id = ?
-        """, (base_book_id, base_page, commentary_book_id))
+        SELECT translated_content FROM translations 
+        WHERE sutta_name = ? AND original_paragraph = ? AND content_type = ?
+        """, (sutta_name, chunk_id, content_type))
         
-        mapping = cursor.fetchone()
+        result = cursor.fetchone()
+        return result[0] if result else ""
+    
+    def resume_failed_translations(self, sutta_name=None):
+        """Resume translation for failed chunks"""
+        print("🔄 RESUMING FAILED TRANSLATIONS")
+        print("=" * 50)
         
-        if mapping:
-            commentary_page = mapping[0]
-            print(f"🎯 Found mapping: mula_di_02 page {base_page} → attha_di_02 page {commentary_page}")
-            
-            # Get commentary paragraphs from that page
+        cursor = self.translation_db.cursor()
+        
+        if sutta_name:
             cursor.execute("""
-            SELECT page, paranum, content 
-            FROM pages 
-            WHERE bookid = ? AND page = ?
-            ORDER BY CAST(paranum AS INTEGER)
-            """, (commentary_book_id, commentary_page))
-            
-            commentary_paragraphs = cursor.fetchall()
-            return commentary_paragraphs
+            SELECT sutta_name, original_book_id, original_paragraph, content_type, original_content, translated_content
+            FROM translations 
+            WHERE sutta_name = ?
+            ORDER BY id
+            """, (sutta_name,))
         else:
-            print(f"❌ No direct mapping found for mula_di_02 page {base_page}")
-            return []
-    
-    def translate_with_dharmamitra(self, devanagari_text, context_info=""):
-      """Translate Devanagari text using Dharmamitra API"""
-      payload = {
-          'id': json.dumps({
-              "input_sentence": devanagari_text,
-              "input_encoding": "auto", 
-              "target_lang": "english",
-              "do_grammar_explanation": False,
-              "model": "default"
-          }),
-          'messages': [{
-              'role': 'user',
-              'content': devanagari_text,
-              'parts': [{'type': 'text', 'text': devanagari_text}]
-          }],
-          'input_sentence': devanagari_text,
-          'input_encoding': 'auto',
-          'target_lang': 'english',
-          'do_grammar_explanation': False,
-          'model': 'default',
-      }
-      
-      try:
-          response = requests.post(
-              "https://dharmamitra.org/next/api/mitra-translation-stream",
-              headers={'Content-Type': 'application/json'},
-              data=json.dumps(payload),
-              timeout=30
-          )
-          
-          if response.status_code == 200:
-              return response.text
-          else:
-              print(f"❌ API error: {response.status_code}")
-              return None
-              
-      except Exception as e:
-          print(f"❌ Request failed: {e}")
-          return None
-  
-    def save_translation(self, book_id, page_num, paranum, content_type, original, translated):
-      """Save translation to separate database"""
-      cursor = self.translation_db.cursor()
-      
-      cursor.execute("""
-      INSERT INTO translations 
-      (original_book_id, original_page_number, original_paragraph, content_type, original_content, translated_content)
-      VALUES (?, ?, ?, ?, ?, ?)
-      """, (book_id, page_num, paranum, content_type, original, translated))
-      
-      self.translation_db.commit()
-      
-    def find_dn2_start(self):
-        """Find where DN2 Sāmaññaphala Sutta actually starts in mula_di_02"""
-        cursor = self.main_db.cursor()
-        
-        print("🔍 Finding actual start of DN2 Sāmaññaphala Sutta...")
-        
-        # Look for the specific DN2 content
-        cursor.execute("""
-        SELECT page, paranum, content 
-        FROM pages 
-        WHERE bookid = 'mula_di_02' 
-        AND (
-            content LIKE '%sāmaññaphala%' OR 
-            content LIKE '%समञ्ञफल%' OR
-            content LIKE '%sāmaññaphalasutta%' OR
-            (content LIKE '%dn2%' AND content LIKE '%sutta%')
-        )
-        ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-        LIMIT 5
-        """)
-        
-        dn2_starts = cursor.fetchall()
-        
-        if dn2_starts:
-            print("📍 DN2 Sāmaññaphala Sutta starts at:")
-            for page, paranum, content in dn2_starts:
-                print(f"   Page {page}, Para {paranum}")
-                print(f"   Preview: {content[:100]}...")
-                print()
-            return dn2_starts[0]  # Return the first match
-        else:
-            print("❌ Could not find DN2 start using direct search")
-            
-            # Alternative: look for paragraphs that specifically mention DN2
             cursor.execute("""
-            SELECT page, paranum, content 
-            FROM pages 
-            WHERE bookid = 'mula_di_02' 
-            AND content LIKE '%para%d%' 
-            AND content LIKE '%dn2%'
-            ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-            LIMIT 1
+            SELECT sutta_name, original_book_id, original_paragraph, content_type, original_content, translated_content
+            FROM translations 
+            ORDER BY id
             """)
-            
-            alternative_start = cursor.fetchone()
-            if alternative_start:
-                print(f"📍 Using alternative DN2 start:")
-                page, paranum, content = alternative_start
-                print(f"   Page {page}, Para {paranum}")
-                print(f"   Preview: {content[:100]}...")
-                return alternative_start
-            
-            print("❌ No DN2 content found")
-            return None
-    
-    def get_dn2_paragraphs(self, start_page, num_paragraphs=3):
-        """Get DN2 paragraphs starting from the identified start page"""
-        cursor = self.main_db.cursor()
         
-        cursor.execute("""
-        SELECT page, paranum, content 
-        FROM pages 
-        WHERE bookid = 'mula_di_02' 
-        AND page >= ?
-        ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-        LIMIT ?
-        """, (start_page, num_paragraphs))
+        all_translations = cursor.fetchall()
         
-        paragraphs = cursor.fetchall()
+        failed_translations = []
+        for sutta, book_id, paragraph, content_type, original, translated in all_translations:
+            if translated and any(error in translated for error in ['[TRANSLATION FAILED', '[TRANSLATION ERROR', 'HTTPSConnectionPool']):
+                print(f"❌ Failed: {sutta} - {content_type} - {paragraph}")
+                failed_translations.append((sutta, book_id, paragraph, content_type, original))
+            elif not translated or translated == '':
+                print(f"❌ Empty: {sutta} - {content_type} - {paragraph}")
+                failed_translations.append((sutta, book_id, paragraph, content_type, original))
         
-        print(f"📖 Found {len(paragraphs)} DN2 paragraphs starting from page {start_page}:")
-        for i, (page, paranum, content) in enumerate(paragraphs):
-            # Verify this is actually DN2 content
-            is_dn2 = 'sāmaññaphala' in content.lower() or 'dn2' in content.lower()
-            sutta = "DN2 - Sāmaññaphala" if is_dn2 else "Unknown (might be DN14 or other)"
-            print(f"   {i+1}. Page {page}, Para {paranum} ({sutta}): {content[:80]}...")
+        print(f"\n📊 Found {len(failed_translations)} failed translations to retry")
         
-        return paragraphs
-    
-    def run_dn2_matching_debug(self, num_paragraphs=3):
-        """Debug: Show matching between DN2 mula and commentary using proper mapping"""
-        print("🐛 Starting DN2 Matching Debug...")
-        
-        base_book_id = 'mula_di_02'
-        commentary_book_id = 'attha_di_02'
-        
-        print(f"🎯 Base text: {base_book_id}")
-        print(f"📝 Commentary: {commentary_book_id}")
-        
-        # FIRST: Find where DN2 actually starts
-        dn2_start = self.find_dn2_start()
-        
-        if not dn2_start:
-            print("❌ Could not find DN2 Sāmaññaphala Sutta in mula_di_02")
+        if not failed_translations:
+            print("✅ No failed translations found!")
             return
         
-        start_page, start_paranum, start_content = dn2_start
-        
-        # Get DN2 paragraphs starting from the actual DN2 content
-        base_paragraphs = self.get_dn2_paragraphs(start_page, num_paragraphs)
-        
-        if not base_paragraphs:
-            print("❌ No DN2 paragraphs found")
-            return
-        
-        # Generate debug HTML using proper mapping
-        self.generate_matching_debug_html(base_paragraphs, base_book_id, commentary_book_id)
-    
-    def examine_mula_di_02_structure(self):
-        """Examine what suttas are contained in mula_di_02"""
-        cursor = self.main_db.cursor()
-        
-        print("🔍 Examining mula_di_02 structure...")
-        
-        # Look for all sutta markers
-        cursor.execute("""
-        SELECT page, paranum, substr(content, 1, 200) as preview
-        FROM pages 
-        WHERE bookid = 'mula_di_02' 
-        AND (
-            content LIKE '%sutta%' OR 
-            content LIKE '%suttavaṇṇanā%' OR
-            content LIKE '%suttaniddeso%'
-        )
-        ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-        LIMIT 15
-        """)
-        
-        sutta_markers = cursor.fetchall()
-        
-        print("📚 Suttas found in mula_di_02:")
-        for page, paranum, preview in sutta_markers:
-            sutta_name = "Unknown"
-            if 'mahāpadāna' in preview.lower():
-                sutta_name = "DN14 - Mahāpadāna Sutta"
-            elif 'sāmaññaphala' in preview.lower():
-                sutta_name = "DN2 - Sāmaññaphala Sutta"
-            elif 'brahmajāla' in preview.lower():
-                sutta_name = "DN1 - Brahmajāla Sutta"
-            elif 'soṇadaṇḍa' in preview.lower():
-                sutta_name = "DN4 - Soṇadaṇḍa Sutta"
-            elif 'kūṭadanta' in preview.lower():
-                sutta_name = "DN5 - Kūṭadanta Sutta"
+        success_count = 0
+        for sutta, book_id, paragraph, content_type, original in failed_translations:
+            print(f"\n🔄 Retrying: {sutta} - {content_type} - {paragraph}")
             
-            print(f"   Page {page}, Para {paranum}: {sutta_name}")
-            print(f"      Preview: {preview[:80]}...")
-    def generate_matching_debug_html(self, base_paragraphs, base_book_id, commentary_book_id):
-        """Generate HTML showing mula-commentary matching using proper mapping"""
+            # Delete the failed entry
+            cursor.execute("""
+            DELETE FROM translations 
+            WHERE sutta_name = ? AND original_paragraph = ? AND content_type = ?
+            """, (sutta, paragraph, content_type))
+            
+            # Retry translation
+            context = f"Retry {sutta} {content_type} {paragraph}"
+            new_translation = self.translate_text(original, context)
+            
+            # Save new translation
+            if new_translation and not any(error in new_translation for error in ['[TRANSLATION FAILED', '[TRANSLATION ERROR']):
+                cursor.execute("""
+                INSERT INTO translations 
+                (sutta_name, original_book_id, original_page_number, original_paragraph, content_type, original_content, translated_content)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (sutta, book_id, 0, paragraph, content_type, original, new_translation))
+                
+                self.translation_db.commit()
+                success_count += 1
+                print(f"✅ Retry successful: {content_type} - {paragraph}")
+            else:
+                print(f"❌ Retry failed again: {content_type} - {paragraph}")
+            
+            time.sleep(2)
         
+        print(f"\n🎉 RESUME COMPLETE: {success_count}/{len(failed_translations)} retries successful")
+    
+    def generate_sutta_html(self, sutta_name, mula_original, mula_translated, commentary_original, commentary_translated):
+        """Generate HTML for any sutta"""
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>DN2 Mula-Commentary Matching Debug</title>
+            <title>{sutta_name} - Complete Translation</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                .pair {{ border: 2px solid #ccc; margin: 20px 0; padding: 15px; }}
-                .mula {{ background: #e8f5e8; padding: 15px; margin: 10px 0; }}
-                .commentary {{ background: #e3f2fd; padding: 15px; margin: 10px 0; }}
-                .header {{ background: #666; color: white; padding: 10px; font-weight: bold; }}
-                .para-info {{ color: #666; font-size: 0.9em; }}
-                .match-info {{ background: #fff3cd; padding: 10px; margin: 10px 0; border-left: 4px solid #ffc107; }}
+                .section {{ border: 2px solid #333; margin: 30px 0; padding: 20px; border-radius: 10px; }}
+                .mula {{ background: #e8f5e8; }}
+                .commentary {{ background: #e3f2fd; }}
+                .header {{ background: #444; color: white; padding: 15px; border-radius: 5px; }}
+                .original {{ color: #666; font-size: 0.9em; border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 10px; }}
+                .translation {{ color: #000; line-height: 1.5; white-space: pre-wrap; }}
+                .note {{ background: #fff3cd; padding: 10px; margin: 10px 0; border-left: 4px solid #ffc107; }}
             </style>
         </head>
         <body>
-            <h1>DN2 Sāmaññaphala Sutta - Mula & Commentary Matching</h1>
-            <div class="header">Base: {base_book_id} | Commentary: {commentary_book_id}</div>
-        """
-        
-        # Show base paragraphs with matching commentary
-        for i, (base_page, base_paranum, base_content) in enumerate(base_paragraphs):
-            # Get matching commentary using mapping table
-            matching_commentary = self.get_matching_commentary(
-                base_book_id, base_page, base_paranum, commentary_book_id
-            )
+            <h1>{sutta_name} - Complete Translation</h1>
             
-            html_content += f"""
-            <div class="pair">
-                <h2>Mula Paragraph {i+1}</h2>
-                <div class="para-info">Page {base_page}, Para {base_paranum}</div>
-                <div class="mula">
-                    <strong>Mula Text:</strong><br>
-                    {base_content}
-                </div>
-            """
+            <div class="note">
+                <strong>Note:</strong> Entire sutta and commentary translated as complete texts.<br>
+                Manual paragraph matching recommended - commentary references sutta paragraph numbers.
+            </div>
             
-            if matching_commentary:
-                html_content += f"""
-                <div class="match-info">
-                    <strong>Mapping:</strong> mula_di_02 page {base_page} → attha_di_02 page {matching_commentary[0][0]}
+            <div class="section mula">
+                <h2>{sutta_name} (Mula Text)</h2>
+                <div class="original">
+                    <strong>Original Pali:</strong>
+                    <div class="translation">{mula_original}</div>
                 </div>
-                <div class="commentary">
-                    <strong>Matching Commentary ({len(matching_commentary)} paragraphs):</strong><br>
-                """
-                for j, (comm_page, comm_paranum, comm_content) in enumerate(matching_commentary):
-                    html_content += f"""
-                    <div style="margin: 10px 0; padding: 10px; background: #fff; border-left: 3px solid #2196F3;">
-                        <div class="para-info">Comm Page {comm_page}, Para {comm_paranum}</div>
-                        {comm_content}
-                    </div>
-                    """
-                html_content += "</div>"
-            else:
-                html_content += """
-                <div class="commentary">
-                    <strong>No matching commentary found via mapping table</strong>
+                <div class="translation">
+                    <strong>English Translation:</strong>
+                    <div class="translation">{mula_translated}</div>
                 </div>
-                """
+            </div>
             
-            html_content += "</div>"
-        
-        html_content += """
-            <div class="header">Debug Info</div>
-            <div style="background: #f5f5f5; padding: 15px; margin: 20px 0;">
-                <h3>Mapping Success!</h3>
-                <p>The paragraph_mapping table is successfully linking mula pages to commentary pages:</p>
-                <ul>
-                    <li>mula_di_02 page 1 → attha_di_02 page 1</li>
-                    <li>mula_di_02 page 2 → attha_di_02 page 3</li>
-                    <li>mula_di_02 page 3 → attha_di_02 page 6</li>
-                </ul>
-                <p>Each mula paragraph now shows the correct commentary paragraphs from the mapped page.</p>
+            <div class="section commentary">
+                <h2>{sutta_name} Commentary (Aṭṭhakathā)</h2>
+                <div class="original">
+                    <strong>Original Pali Commentary:</strong>
+                    <div class="translation">{commentary_original}</div>
+                </div>
+                <div class="translation">
+                    <strong>English Translation:</strong>
+                    <div class="translation">{commentary_translated}</div>
+                </div>
+            </div>
+            
+            <div class="note">
+                <strong>Usage:</strong> Scroll through both texts. Commentary paragraphs reference sutta paragraph numbers.
             </div>
         </body>
         </html>
         """
         
-        with open('dn2_matching_debug.html', 'w', encoding='utf-8') as f:
+        filename = f"{sutta_name.lower().replace(' ', '_')}_translation.html"
+        with open(filename, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
-        print("✅ Generated dn2_matching_debug.html")
-
-    def find_actual_dn2_start(self):
-        """Find the actual start of DN2 Sāmaññaphala Sutta"""
-        cursor = self.main_db.cursor()
-        
-        print("🔍 Searching for DN2 Sāmaññaphala Sutta specifically...")
-        
-        # Look for the actual DN2 sutta - it should have a specific marker
-        cursor.execute("""
-        SELECT page, paranum, content 
-        FROM pages 
-        WHERE bookid = 'mula_di_02' 
-        AND (
-            content LIKE '%sāmaññaphalasutta%' OR
-            content LIKE '%समञ्ञफलसुत्त%' OR
-            content LIKE '%sāmaññaphala sutta%' OR
-            (content LIKE '%sutta%' AND content LIKE '%sāmaññaphala%')
-        )
-        ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-        LIMIT 10
-        """)
-        
-        results = cursor.fetchall()
-        
-        if results:
-            print("📍 Found potential DN2 markers:")
-            for page, paranum, content in results:
-                print(f"   Page {page}, Para {paranum}")
-                print(f"   Preview: {content[:150]}...")
-                print()
-            return results[0]
-        
-        # Alternative: Look for the specific DN2 chapter marker
-        print("🔍 Searching for DN2 chapter markers...")
-        cursor.execute("""
-        SELECT page, paranum, content 
-        FROM pages 
-        WHERE bookid = 'mula_di_02' 
-        AND content LIKE '%dn2%'
-        ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-        LIMIT 10
-        """)
-        
-        dn2_markers = cursor.fetchall()
-        
-        print("📍 DN2 markers found:")
-        for page, paranum, content in dn2_markers:
-            print(f"   Page {page}, Para {paranum}")
-            print(f"   Content: {content}")
-            print()
-        
-        if dn2_markers:
-            return dn2_markers[0]
-        
-        print("❌ Could not find DN2 Sāmaññaphala Sutta")
-        return None
+        print(f"✅ Generated {filename}")
     
-    def examine_all_sutta_starts(self):
-        """Examine all sutta starts in mula_di_02 to understand the structure"""
-        cursor = self.main_db.cursor()
+    def check_translation_status(self, sutta_name=None):
+        """Check status of translations"""
+        print("📊 TRANSLATION STATUS CHECK")
+        print("=" * 40)
         
-        print("🔍 Examining all sutta starts in mula_di_02...")
-        
-        # Look for all chapter markers
-        cursor.execute("""
-        SELECT page, paranum, content 
-        FROM pages 
-        WHERE bookid = 'mula_di_02' 
-        AND content LIKE '%chapter%' OR content LIKE '%sutta%' OR content LIKE '%%'
-        ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-        LIMIT 20
-        """)
-        
-        chapters = cursor.fetchall()
-        
-        print("📚 All chapter/sutta markers:")
-        for page, paranum, content in chapters:
-            # Extract the sutta name
-            sutta_name = "Unknown"
-            if 'mahāpadāna' in content.lower():
-                sutta_name = "DN14 - Mahāpadāna Sutta"
-            elif 'mahānidāna' in content.lower():
-                sutta_name = "DN15 - Mahānidāna Sutta" 
-            elif 'mahāparinibbāna' in content.lower():
-                sutta_name = "DN16 - Mahāparinibbāna Sutta"
-            elif 'mahāsudassana' in content.lower():
-                sutta_name = "DN17 - Mahāsudassana Sutta"
-            elif 'janavasabha' in content.lower():
-                sutta_name = "DN18 - Janavasabha Sutta"
-            elif 'mahāgovinda' in content.lower():
-                sutta_name = "DN19 - Mahāgovinda Sutta"
-            elif 'sāmaññaphala' in content.lower():
-                sutta_name = "DN2 - Sāmaññaphala Sutta"
-            elif 'brahmajāla' in content.lower():
-                sutta_name = "DN1 - Brahmajāla Sutta"
-            
-            print(f"   Page {page}, Para {paranum}: {sutta_name}")
-            print(f"   Marker: {content.strip()}")
-            print()
-    
-    def search_all_dn2_books(self):
-        """Search all books for DN2 Sāmaññaphala Sutta"""
-        cursor = self.main_db.cursor()
-        
-        print("🔍 Searching all books for DN2 Sāmaññaphala Sutta...")
-        
-        cursor.execute("""
-        SELECT DISTINCT bookid, name 
-        FROM books 
-        WHERE name LIKE '%sāmaññaphala%' OR name LIKE '%समञ्ञफल%' OR name LIKE '%dn2%'
-        """)
-        
-        dn2_books = cursor.fetchall()
-        
-        print("📚 Books that might contain DN2:")
-        for book_id, name in dn2_books:
-            print(f"   {book_id}: {name}")
-            
-            # Check first few paragraphs
-            cursor.execute("""
-            SELECT page, paranum, substr(content, 1, 100) 
-            FROM pages 
-            WHERE bookid = ? 
-            ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-            LIMIT 2
-            """, (book_id,))
-            
-            samples = cursor.fetchall()
-            for page, paranum, preview in samples:
-                print(f"      Page {page}, Para {paranum}: {preview}...")
-
-    def translate_dn_with_commentary(self, start_page=1, num_pages=5):
-        """Translate Digha Nikaya mula and commentary while preserving mapping"""
-        print("🚀 Starting DN Translation with Commentary...")
-        
-        base_book_id = 'mula_di_02'
-        commentary_book_id = 'attha_di_02'
-        
-        print(f"🎯 Base text: {base_book_id}")
-        print(f"📝 Commentary: {commentary_book_id}")
-        
-        # Get mula paragraphs for translation
-        cursor = self.main_db.cursor()
-        
-        # Get mula paragraphs starting from specified page
-        cursor.execute("""
-        SELECT page, paranum, content 
-        FROM pages 
-        WHERE bookid = ? AND page >= ?
-        ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-        LIMIT ?
-        """, (base_book_id, start_page, num_pages * 10))  # Estimate paragraphs per page
-        
-        mula_paragraphs = cursor.fetchall()
-        
-        print(f"📖 Found {len(mula_paragraphs)} mula paragraphs from page {start_page}:")
-        
-        # Translate mula text
-        print(f"\n🌐 Translating {len(mula_paragraphs)} MULA paragraphs...")
-        for i, (page, paranum, content) in enumerate(mula_paragraphs):
-            print(f"   📖 Translating mula page {page}, para {paranum} ({i+1}/{len(mula_paragraphs)})...")
-            
-            translation = self.translate_with_dharmamitra(content, f"DN mula page {page}, para {paranum}")
-            if translation:
-                self.save_translation(base_book_id, page, paranum, 'mula', content, translation)
-                print(f"   ✅ Translated: {translation[:50]}...")
-                time.sleep(2)  # Rate limiting
-            else:
-                print(f"   ❌ Failed to translate mula paragraph {i+1}")
-        
-        # Translate corresponding commentary using mapping
-        print(f"\n🌐 Translating COMMENTARY using mapping table...")
-        
-        # Get unique commentary pages from mapping for the mula pages we're translating
-        cursor.execute("""
-        SELECT DISTINCT exp_page_number 
-        FROM paragraph_mapping 
-        WHERE base_book_id = ? AND exp_book_id = ? AND base_page_number >= ?
-        ORDER BY exp_page_number
-        LIMIT ?
-        """, (base_book_id, commentary_book_id, start_page, num_pages * 3))
-        
-        commentary_pages = [row[0] for row in cursor.fetchall()]
-        
-        print(f"📋 Found {len(commentary_pages)} commentary pages to translate: {commentary_pages}")
-        
-        for commentary_page in commentary_pages:
-            # Get all commentary paragraphs from this page
-            cursor.execute("""
-            SELECT page, paranum, content 
-            FROM pages 
-            WHERE bookid = ? AND page = ?
-            ORDER BY CAST(paranum AS INTEGER)
-            """, (commentary_book_id, commentary_page))
-            
-            commentary_paragraphs = cursor.fetchall()
-            
-            print(f"   💬 Translating commentary page {commentary_page} ({len(commentary_paragraphs)} paragraphs)...")
-            
-            for j, (page, paranum, content) in enumerate(commentary_paragraphs):
-                translation = self.translate_with_dharmamitra(content, f"DN commentary page {page}, para {paranum}")
-                if translation:
-                    self.save_translation(commentary_book_id, page, paranum, 'commentary', content, translation)
-                    print(f"      ✅ Translated commentary: {translation[:50]}...")
-                    time.sleep(2)  # Rate limiting
-                else:
-                    print(f"      ❌ Failed to translate commentary paragraph {j+1}")
-        
-        print(f"\n🎉 DN translation completed! Mula and commentary translations saved!")
-        self.generate_translation_preview()
-    
-    
-    def generate_translation_preview(self):
-        """Generate HTML preview showing mula-commentary pairs"""
         cursor = self.translation_db.cursor()
         
-        # Get translations grouped by mula page - simplified version without mapping table
-        cursor.execute("""
-        SELECT original_book_id, original_page_number, original_paragraph,
-               original_content, translated_content, content_type
-        FROM translations 
-        ORDER BY original_book_id, original_page_number, original_paragraph, content_type
-        LIMIT 30
-        """)
+        if sutta_name:
+            cursor.execute("""
+            SELECT 
+                sutta_name,
+                content_type,
+                COUNT(*) as total,
+                SUM(CASE WHEN translated_content LIKE '%[TRANSLATION FAILED%' OR translated_content LIKE '%[TRANSLATION ERROR%' OR translated_content LIKE '%HTTPSConnectionPool%' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN translated_content IS NULL OR translated_content = '' THEN 1 ELSE 0 END) as empty,
+                SUM(CASE WHEN translated_content NOT LIKE '%[TRANSLATION%' AND translated_content != '' THEN 1 ELSE 0 END) as success
+            FROM translations 
+            WHERE sutta_name = ?
+            GROUP BY sutta_name, content_type
+            """, (sutta_name,))
+        else:
+            cursor.execute("""
+            SELECT 
+                sutta_name,
+                content_type,
+                COUNT(*) as total,
+                SUM(CASE WHEN translated_content LIKE '%[TRANSLATION FAILED%' OR translated_content LIKE '%[TRANSLATION ERROR%' OR translated_content LIKE '%HTTPSConnectionPool%' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN translated_content IS NULL OR translated_content = '' THEN 1 ELSE 0 END) as empty,
+                SUM(CASE WHEN translated_content NOT LIKE '%[TRANSLATION%' AND translated_content != '' THEN 1 ELSE 0 END) as success
+            FROM translations 
+            GROUP BY sutta_name, content_type
+            """)
         
         results = cursor.fetchall()
         
-        html_content = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>DN Mula-Commentary Translation Preview</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 40px; }
-                .pair { border: 2px solid #ccc; margin: 20px 0; padding: 15px; }
-                .mula { background: #e8f5e8; padding: 15px; margin: 10px 0; }
-                .commentary { background: #e3f2fd; padding: 15px; margin: 10px 0; }
-                .header { background: #666; color: white; padding: 10px; font-weight: bold; }
-                .original { color: #666; font-size: 0.9em; border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 10px; }
-                .translation { color: #000; }
-                .content-type { font-weight: bold; color: #333; margin-bottom: 5px; }
-            </style>
-        </head>
-        <body>
-            <h1>DN Mula-Commentary Translation Preview</h1>
-            <div class="header">Showing translated mula and commentary text</div>
-        """
-        
-        current_page = None
-        for row in results:
-            book_id, page, paranum, original, translated, content_type = row
-            
-            if page != current_page:
-                if current_page is not None:
-                    html_content += "</div>"
-                current_page = page
-                html_content += f"""
-                <div class="pair">
-                    <h2>Page {page}</h2>
-                """
-            
-            content_class = "mula" if content_type == "mula" else "commentary"
-            content_label = "MULA TEXT" if content_type == "mula" else "COMMENTARY"
-            
-            html_content += f"""
-            <div class="{content_class}">
-                <div class="content-type">{content_label} - Paragraph {paranum}</div>
-                <div class="original">
-                    <strong>Original:</strong><br>{original}
-                </div>
-                <div class="translation">
-                    <strong>Translation:</strong><br>{translated}
-                </div>
-            </div>
-            """
-        
-        html_content += "</div></body></html>"
-        
-        with open('dn_translation_preview.html', 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        
-        print("✅ Generated dn_translation_preview.html")
-    
-        # Also show a summary of what was translated
-        cursor.execute("""
-        SELECT content_type, COUNT(*) as count 
-        FROM translations 
-        GROUP BY content_type
-        """)
-        
-        summary = cursor.fetchall()
-        print("\n📊 Translation Summary:")
-        for content_type, count in summary:
-            print(f"   {content_type}: {count} paragraphs") 
-            
-    def find_dn2_samanaphala_specific(self):
-          """Find DN2 Sāmaññaphala Sutta specifically in both mula and commentary"""
-          cursor = self.main_db.cursor()
-          
-          print("🔍 Searching for DN2 Sāmaññaphala specifically...")
-          
-          # Look for DN2 in mula text
-          print("📖 Searching mula_di_02 for DN2 Sāmaññaphala...")
-          cursor.execute("""
-          SELECT page, paranum, content 
-          FROM pages 
-          WHERE bookid = 'mula_di_02' 
-          AND (
-              content LIKE '%sāmaññaphala%' OR 
-              content LIKE '%समञ्ञफल%' OR
-              content LIKE '%sāmaññaphalasutta%' OR
-              (content LIKE '%dn2%' AND content LIKE '%sutta%' AND content NOT LIKE '%dn2_%')
-          )
-          ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-          LIMIT 10
-          """)
-          
-          mula_dn2 = cursor.fetchall()
-          
-          if mula_dn2:
-              print("📍 DN2 Sāmaññaphala found in mula_di_02:")
-              for page, paranum, content in mula_dn2:
-                  print(f"   Page {page}, Para {paranum}")
-                  print(f"   Content: {content[:150]}...")
-                  print()
-          else:
-              print("❌ DN2 Sāmaññaphala not found in mula_di_02")
-          
-          # Look for DN2 in commentary text
-          print("📝 Searching attha_di_02 for DN2 Sāmaññaphala commentary...")
-          cursor.execute("""
-          SELECT page, paranum, content 
-          FROM pages 
-          WHERE bookid = 'attha_di_02' 
-          AND (
-              content LIKE '%sāmaññaphala%' OR 
-              content LIKE '%समञ्ञफल%' OR
-              content LIKE '%sāmaññaphalasutta%' OR
-              content LIKE '%sāmaññaphalasuttavaṇṇanā%'
-          )
-          ORDER BY CAST(page AS INTEGER), CAST(paranum AS INTEGER)
-          LIMIT 10
-          """)
-          
-          commentary_dn2 = cursor.fetchall()
-          
-          if commentary_dn2:
-              print("📍 DN2 Sāmaññaphala commentary found in attha_di_02:")
-              for page, paranum, content in commentary_dn2:
-                  print(f"   Page {page}, Para {paranum}")
-                  print(f"   Content: {content[:150]}...")
-                  print()
-          else:
-              print("❌ DN2 Sāmaññaphala commentary not found in attha_di_02")
-          
-          return mula_dn2, commentary_dn2
-      
-    def check_all_sutta_starts(self):
-          """Check where each sutta starts in both texts"""
-          cursor = self.main_db.cursor()
-          
-          print("📚 Checking all sutta starts in mula_di_02...")
-          cursor.execute("""
-          SELECT page, paranum, substr(content, 1, 200) 
-          FROM pages 
-          WHERE bookid = 'mula_di_02' 
-          AND content LIKE '%suttaṃ%'
-          ORDER BY CAST(page AS INTEGER)
-          LIMIT 15
-          """)
-          
-          mula_suttas = cursor.fetchall()
-          print("Mula suttas:")
-          for page, paranum, content in mula_suttas:
-              print(f"   Page {page}, Para {paranum}: {content.strip()}")
-          
-          print("\n📚 Checking all sutta starts in attha_di_02...")
-          cursor.execute("""
-          SELECT page, paranum, substr(content, 1, 200) 
-          FROM pages 
-          WHERE bookid = 'attha_di_02' 
-          AND content LIKE '%suttavaṇṇanā%'
-          ORDER BY CAST(page AS INTEGER)
-          LIMIT 15
-          """)
-          
-          commentary_suttas = cursor.fetchall()
-          print("Commentary suttas:")
-          for page, paranum, content in commentary_suttas:
-              print(f"   Page {page}, Para {paranum}: {content.strip()}")
-# ~ if __name__ == "__main__":
-    # ~ translator = TranslationTest('~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db', 'translations.db')
-    # ~ translator.generate_translation_preview()
-    # ~ print("=== TRANSLATING DN WITH COMMENTARY ===")
+        for sutta, content_type, total, failed, empty, success in results:
+            print(f"\n{sutta} - {content_type.upper()}:")
+            print(f"  Total: {total}")
+            print(f"  Success: {success}")
+            print(f"  Failed: {failed}")
+            print(f"  Empty: {empty}")
+            if total > 0:
+                print(f"  Success Rate: {success/total*100:.1f}%")
 
+# Usage examples
 if __name__ == "__main__":
-    translator = TranslationTest('~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db', 'translations.db')
+    translator = SuttaTranslator(
+        '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
+        'translations.db'
+    )
     
-    print("=== FINDING DN2 SĀMAÑÑAPHALA SPECIFICALLY ===")
-    mula_dn2, commentary_dn2 = translator.find_dn2_samanaphala_specific()
+    # Example: Translate DN1 Brahmajāla
+    translator.translate_complete_sutta("Brahmajāla")
     
-    print("\n=== CHECKING ALL SUTTA STARTS ===")
-    translator.check_all_sutta_starts()
+    # Example: Translate with explicit parameters
+    # translator.translate_complete_sutta("DN1", "mula_di_01", 1, 149, "attha_di_01")
+    
+    # Check status and resume if needed
+    translator.check_translation_status()
+    # translator.resume_failed_translations()

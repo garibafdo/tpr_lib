@@ -1830,51 +1830,224 @@ class SuttaTranslator:
         
         return paragraphs
 
+    def generate_debug_html_whole_book(self, book_id):
+        """Generate debug HTML with entire book content to check paragraph ranges"""
+        
+        cursor = self.translation_db.cursor()
+        
+        # Get ALL mula chunks for this book
+        cursor.execute("""
+            SELECT sutta_name, original_paragraph, original_content, translated_content 
+            FROM translations 
+            WHERE original_book_id = ? AND content_type = 'mula'
+            ORDER BY original_paragraph
+        """, (book_id,))
+        
+        all_chunks = cursor.fetchall()
+        
+        print(f"📊 Found {len(all_chunks)} mula chunks for {book_id}")
+        
+        # Group by sutta name to see the distribution
+        cursor.execute("""
+            SELECT sutta_name, COUNT(*) as chunk_count, 
+                   MIN(original_paragraph) as min_para, MAX(original_paragraph) as max_para
+            FROM translations 
+            WHERE original_book_id = ? AND content_type = 'mula'
+            GROUP BY sutta_name
+            ORDER BY min_para
+        """, (book_id,))
+        
+        sutta_stats = cursor.fetchall()
+        
+        print("📈 Sutta distribution:")
+        for sutta_name, count, min_para, max_para in sutta_stats:
+            print(f"   {sutta_name}: {count} chunks, paragraphs {min_para}-{max_para}")
+        
+        # Create debug HTML
+        filename = f"DEBUG_{book_id}_complete.html"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>DEBUG: {book_id} Complete Content</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .chunk {{ border: 1px solid #ccc; margin: 10px 0; padding: 15px; }}
+                .header {{ background: #f0f0f0; padding: 10px; margin: -15px -15px 15px -15px; }}
+                .sutta-header {{ background: #e0e0ff; padding: 10px; margin: 20px 0 10px 0; }}
+                .pali {{ color: #333; margin-bottom: 10px; }}
+                .trans {{ color: #666; font-style: italic; }}
+                .para-info {{ color: #888; font-size: 0.9em; }}
+            </style>
+        </head>
+        <body>
+            <h1>DEBUG: Complete {book_id}</h1>
+            <h2>Total chunks: {len(all_chunks)}</h2>
+            
+            <div class="sutta-stats">
+                <h3>Sutta Distribution:</h3>
+                <ul>
+        """
+        
+        for sutta_name, count, min_para, max_para in sutta_stats:
+            html_content += f'<li><b>{sutta_name}</b>: {count} chunks, paragraphs {min_para}-{max_para}</li>'
+        
+        html_content += """
+                </ul>
+            </div>
+            <hr>
+        """
+        
+        # Show all chunks in order
+        current_sutta = None
+        for sutta_name, para_num, original, translated in all_chunks:
+            if sutta_name != current_sutta:
+                current_sutta = sutta_name
+                html_content += f'<div class="sutta-header"><h2>🚩 {sutta_name}</h2></div>'
+            
+            html_content += f"""
+            <div class="chunk">
+                <div class="header">
+                    <span class="para-info">Sutta: {sutta_name} | Paragraph: {para_num} | Chars: {len(original)}→{len(translated)}</span>
+                </div>
+                <div class="pali"><b>Pali:</b> {original[:500]}{'...' if len(original) > 500 else ''}</div>
+                <div class="trans"><b>Translation:</b> {translated[:500]}{'...' if len(translated) > 500 else ''}</div>
+            </div>
+            """
+        
+        html_content += "</body></html>"
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"🐛 Debug HTML generated: {filename}")
+        return filename
+    
+    def generate_debug_html_with_real_paragraphs(self, book_id):
+        """Debug HTML using actual paragraph numbers from main database"""
+        
+        cursor = self.translation_db.cursor()
+        
+        # Get the actual paragraph ranges for each sutta from main database
+        sutta_ranges = self.get_real_sutta_ranges(book_id)
+        
+        print("📊 Real sutta paragraph ranges from main DB:")
+        for sutta_name, start_para, end_para in sutta_ranges:
+            print(f"   {sutta_name}: paragraphs {start_para}-{end_para}")
+        
+        # Now show translations grouped by real paragraph ranges
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>REAL PARAGRAPHS: {book_id}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .sutta-section {{ border: 2px solid #333; margin: 20px 0; padding: 15px; }}
+                .sutta-header {{ background: #2c5530; color: white; padding: 10px; margin: -15px -15px 15px -15px; }}
+                .chunk {{ border: 1px solid #ddd; margin: 5px 0; padding: 10px; }}
+                .real-para {{ color: #2c5530; font-weight: bold; }}
+            </style>
+        </head>
+        <body>
+            <h1>REAL Paragraph Structure: {book_id}</h1>
+        """
+        
+        for sutta_name, start_para, end_para in sutta_ranges:
+            # Get original paragraphs from main DB
+            original_paras = self.get_paragraphs_from_main_db(book_id, start_para, end_para)
+            
+            # Get translations for this range
+            cursor.execute("""
+                SELECT original_paragraph, original_content, translated_content 
+                FROM translations 
+                WHERE original_book_id = ? 
+                AND CAST(SUBSTR(original_paragraph, INSTR(original_paragraph, '_mula_') + 6) AS INTEGER) BETWEEN ? AND ?
+                ORDER BY original_paragraph
+            """, (book_id, start_para, end_para))
+            
+            translation_chunks = cursor.fetchall()
+            
+            html_content += f"""
+            <div class="sutta-section">
+                <div class="sutta-header">
+                    <h2>{sutta_name}</h2>
+                    <div>Real paragraphs: {start_para}-{end_para} | Original paras: {len(original_paras)} | Translation chunks: {len(translation_chunks)}</div>
+                </div>
+            """
+            
+            # Show original paragraphs
+            html_content += "<h3>Original Paragraphs from Main DB:</h3>"
+            for para_num, content in original_paras[:5]:  # Show first 5 as sample
+                html_content += f'<div class="chunk"><span class="real-para">Para {para_num}:</span> {content[:200]}...</div>'
+            
+            if len(original_paras) > 5:
+                html_content += f'<div>... and {len(original_paras) - 5} more paragraphs</div>'
+            
+            # Show translation chunks
+            html_content += "<h3>Translation Chunks:</h3>"
+            for chunk_id, original, translated in translation_chunks:
+                html_content += f"""
+                <div class="chunk">
+                    <div><b>Chunk ID:</b> {chunk_id}</div>
+                    <div><b>Original:</b> {original[:100]}...</div>
+                    <div><b>Translated:</b> {translated[:100]}...</div>
+                </div>
+                """
+            
+            html_content += "</div>"
+        
+        html_content += "</body></html>"
+        
+        filename = f"REAL_PARAGRAPHS_{book_id}.html"
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"🔍 Real paragraphs debug generated: {filename}")
+        return filename
+    
+    def get_real_sutta_ranges(self, book_id):
+        """Get actual paragraph ranges for suttas from main database"""
+        cursor = self.main_db.cursor()
+        
+        # This is a simplified version - you'll need to implement proper boundary detection
+        sutta_ranges = [
+            ("Brahmajāla Sutta", 1, 46),
+            ("Sāmaññaphala Sutta", 47, 146),
+            ("Ambaṭṭha Sutta", 147, 216),
+            ("Soṇadaṇḍa Sutta", 217, 276),
+            ("Kūṭadanta Sutta", 277, 332),
+            ("Mahāli Sutta", 333, 358),
+            ("Jāliya Sutta", 359, 368),
+            ("Mahāsīhanāda Sutta", 369, 418),
+            ("Poṭṭhapāda Sutta", 419, 478),
+            ("Subha Sutta", 479, 532),
+            ("Kevaddha Sutta", 533, 572),
+            ("Lohicca Sutta", 573, 604),
+            ("Tevijja Sutta", 605, 648)
+        ]
+        
+        return sutta_ranges
+    
+    def get_paragraphs_from_main_db(self, book_id, start_para, end_para):
+        """Get original paragraphs from main database"""
+        cursor = self.main_db.cursor()
+        cursor.execute("""
+            SELECT p.paragraph_number, pa.content
+            FROM paragraphs p
+            JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+            WHERE p.book_id = ? AND p.paragraph_number BETWEEN ? AND ?
+            ORDER BY p.paragraph_number
+        """, (book_id, start_para, end_para))
+        
+        return cursor.fetchall()
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
         'translations.db'
     )
-    translator.generate_html_for_all_suttas()
-    # Example: Translate DN1 Brahmajāla
-    # ~ translator.translate_complete_sutta("Brahmajāla")
-    
-    # ~ # Example: Translate with explicit parameters
-    # ~ # translator.translate_complete_sutta("DN1", "mula_di_01", 1, 149, "attha_di_01")
-    
-    # ~ # Check status and resume if needed
-    # ~ translator.check_translation_status()
-    # ~ # translator.resume_failed_translations()
-    
-    # ~ # Translate ALL Dīgha suttas automatically
-    # ~ translator.translate_entire_digha()
-    
-    # ~ # Or just one book
-    # ~ translator.translate_entire_book("mula_di_01", "attha_di_01")
-    
-    
-    # Translate by DN number
-    # ~ translator.translate_sutta_by_number(3)   # DN3 Ambatṭha
-    # ~ translator.translate_sutta_by_number(15)  # DN15 Mahānidāna
-    # ~ translator.translate_sutta_by_number(1)   # DN1 Brahmajāla (will skip)
-    # ~ translator.debug_sutta_range("ambatṭha")
-    # ~ translator.check_paragraph_sequence("mula_di_01")
-    # ~ translator.translate_book_by_ranges("mula_di_01", "attha_di_01")
-    # ~ translator.check_translation_status()
-    # ~ translator.resume_failed_translations()
-    # ~ translator.clean_none_chunks()
-    # ~ translator.generate_sutta_html_from_db("ambaṭṭhasuttaṃ")
-    # ~ translator.generate_sutta_html_from_db("kevaṭṭasuttaṃ") 
-    # ~ translator.generate_sutta_html_from_db("kūṭadantasuttaṃ")
-    
-    # Also regenerate any others that might need updating
-    # ~ translator.generate_sutta_html_from_db("jāliyasuttaṃ") 
-    # This will translate EVERY paragraph in mula_di_01, no cutting off
-    # ~ translator.translate_entire_book_complete("mula_di_01", "attha_di_01")
-    # After your batch translation completes
-
-    
-    # ~ translator.generate_all_sutta_html("mula_di_01")
-    # ~ translator.generate_html_from_translations("Brahmajala Sutta")
-    
-   
+    # ~ translator.generate_html_for_all_suttas()
+    translator.generate_debug_html_with_real_paragraphs("mula_di_01")

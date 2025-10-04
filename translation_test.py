@@ -759,6 +759,172 @@ class SuttaTranslator:
         print(f"🚀 Translating {len(ranges)} suttas in {mula_book_id}...")
         for sutta_name, start_para, end_para in ranges:
             self.translate_complete_sutta(sutta_name, mula_book_id, start_para, end_para, commentary_book_id)
+            
+    def debug_none_chunks(self):
+        """Check chunks with None sutta_name"""
+        cursor = self.translation_db.cursor()
+        
+        cursor.execute("""
+        SELECT original_book_id, original_paragraph, content_type, original_content, translated_content
+        FROM translations 
+        WHERE sutta_name IS NULL OR sutta_name = 'None'
+        """)
+        
+        none_chunks = cursor.fetchall()
+        
+        print(f"🔍 Found {len(none_chunks)} chunks with None sutta_name:")
+        for book_id, paragraph, content_type, original, translated in none_chunks:
+            print(f"   {book_id} - {content_type} - {paragraph}")
+            print(f"   Original: {original[:100]}...")
+            print(f"   Translated: {translated[:100]}...")
+            print()
+    def clean_none_chunks(self):
+        """Clean up chunks with None sutta_name that are causing false failures"""
+        cursor = self.translation_db.cursor()
+        
+        # Delete all chunks with None sutta_name
+        cursor.execute("""
+        DELETE FROM translations 
+        WHERE sutta_name IS NULL OR sutta_name = 'None'
+        """)
+        
+        deleted_count = cursor.rowcount
+        self.translation_db.commit()
+        
+        print(f"🧹 Cleaned {deleted_count} chunks with None sutta_name")
+        print("✅ These were mostly header content and duplicates from early testing")
+        
+        # Now run resume to fix actual failed chunks
+        print("\n🔄 Now resuming actual failed translations...")
+        self.resume_failed_translations()
+        
+        
+    def generate_sutta_html_from_db(self, sutta_name):
+        """Generate HTML for a sutta by loading from database"""
+        cursor = self.translation_db.cursor()
+        
+        # Get all mula chunks for this sutta
+        cursor.execute("""
+        SELECT original_content, translated_content 
+        FROM translations 
+        WHERE sutta_name = ? AND content_type = 'mula'
+        ORDER BY original_paragraph
+        """, (sutta_name,))
+        
+        mula_chunks = cursor.fetchall()
+        
+        # Combine mula content
+        full_mula_original = ""
+        full_mula_translated = ""
+        for orig, trans in mula_chunks:
+            full_mula_original += orig + "\n\n"
+            full_mula_translated += trans + "\n\n"
+        
+        # Get all commentary chunks for this sutta
+        cursor.execute("""
+        SELECT original_content, translated_content 
+        FROM translations 
+        WHERE sutta_name = ? AND content_type = 'commentary'
+        ORDER BY original_paragraph
+        """, (sutta_name,))
+        
+        commentary_chunks = cursor.fetchall()
+        
+        # Combine commentary content
+        full_commentary_original = ""
+        full_commentary_translated = ""
+        for orig, trans in commentary_chunks:
+            full_commentary_original += orig + "\n\n"
+            full_commentary_translated += trans + "\n\n"
+        
+        # Generate HTML
+        self.generate_sutta_html(
+            sutta_name,
+            full_mula_original,
+            full_mula_translated, 
+            full_commentary_original,
+            full_commentary_translated
+        )      
+
+    def translate_entire_book_complete(self, mula_book_id, commentary_book_id):
+        """Translate ALL paragraphs in a book, regardless of sutta boundaries"""
+        cursor = self.main_db.cursor()
+        
+        # Get ALL paragraphs in the book
+        cursor.execute("""
+        SELECT MIN(paragraph_number), MAX(paragraph_number)
+        FROM paragraphs 
+        WHERE book_id = ?
+        """, (mula_book_id,))
+        
+        start_para, end_para = cursor.fetchone()
+        
+        print(f"📚 Translating ENTIRE {mula_book_id}: paragraphs {start_para}-{end_para}")
+        
+        # Use a generic sutta name for the whole book
+        sutta_name = f"complete_{mula_book_id}"
+        
+        # Translate all paragraphs as one big text
+        self.translate_complete_sutta(sutta_name, mula_book_id, start_para, end_para, commentary_book_id)
+
+    def get_accurate_sutta_ranges(self, mula_book_id):
+        """Get accurate sutta ranges from the suttas table"""
+        cursor = self.main_db.cursor()
+        
+        # Get all suttas in this book with their start pages
+        cursor.execute("""
+        SELECT name, page_number 
+        FROM suttas 
+        WHERE book_id = ?
+        ORDER BY page_number
+        """, (mula_book_id,))
+        
+        suttas = cursor.fetchall()
+        ranges = []
+        
+        for i, (sutta_name, start_page) in enumerate(suttas):
+            # Find start paragraph from start page
+            cursor.execute("""
+            SELECT MIN(paragraph_number)
+            FROM paragraphs 
+            WHERE book_id = ? AND page_number >= ?
+            """, (mula_book_id, start_page))
+            start_para = cursor.fetchone()[0]
+            
+            # End paragraph is start of next sutta minus 1, or end of book
+            if i < len(suttas) - 1:
+                next_start_page = suttas[i+1][1]
+                cursor.execute("""
+                SELECT MIN(paragraph_number) - 1
+                FROM paragraphs 
+                WHERE book_id = ? AND page_number >= ?
+                """, (mula_book_id, next_start_page))
+                end_para = cursor.fetchone()[0]
+            else:
+                # Last sutta - go to max paragraph
+                cursor.execute("""
+                SELECT MAX(paragraph_number)
+                FROM paragraphs 
+                WHERE book_id = ?
+                """, (mula_book_id,))
+                end_para = cursor.fetchone()[0]
+            
+            ranges.append((sutta_name, start_para, end_para))
+            print(f"📖 {sutta_name}: paragraphs {start_para}-{end_para}")
+        
+        return ranges
+        
+    def generate_individual_sutta_htmls(self, mula_book_id):
+        """Generate separate HTML files for each sutta using paragraph ranges"""
+        # Get the mapped sutta ranges we found earlier
+        ranges = self.map_sutta_ranges(mula_book_id)
+        
+        for sutta_name, start_para, end_para in ranges:
+            print(f"🎨 Generating HTML for {sutta_name} (paragraphs {start_para}-{end_para})")
+            self.generate_sutta_html_from_db(sutta_name)
+    
+    # Usage:
+    translator.generate_individual_sutta_htmls("mula_di_01")
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
@@ -788,6 +954,17 @@ if __name__ == "__main__":
     # ~ translator.translate_sutta_by_number(1)   # DN1 Brahmajāla (will skip)
     # ~ translator.debug_sutta_range("ambatṭha")
     # ~ translator.check_paragraph_sequence("mula_di_01")
-    translator.translate_book_by_ranges("mula_di_01", "attha_di_01")
+    # ~ translator.translate_book_by_ranges("mula_di_01", "attha_di_01")
+    # ~ translator.check_translation_status()
+    # ~ translator.resume_failed_translations()
+    # ~ translator.clean_none_chunks()
+    # ~ translator.generate_sutta_html_from_db("ambaṭṭhasuttaṃ")
+    # ~ translator.generate_sutta_html_from_db("kevaṭṭasuttaṃ") 
+    # ~ translator.generate_sutta_html_from_db("kūṭadantasuttaṃ")
+    
+    # Also regenerate any others that might need updating
+    # ~ translator.generate_sutta_html_from_db("jāliyasuttaṃ") 
+    # This will translate EVERY paragraph in mula_di_01, no cutting off
+    translator.translate_entire_book_complete("mula_di_01", "attha_di_01")
     
   

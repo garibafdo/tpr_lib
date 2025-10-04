@@ -2110,10 +2110,104 @@ class SuttaTranslator:
         
         print(f"📄 Simple concatenated HTML: {filename}")
         return filename
+
+    def generate_clean_paragraph_html(self, book_id):
+        """Generate clean HTML with reconstructed paragraph numbers"""
+        
+        cursor = self.translation_db.cursor()
+        
+        # Get all chunks and try to reconstruct paragraph structure
+        cursor.execute("""
+            SELECT original_content, translated_content 
+            FROM translations 
+            WHERE original_book_id = ? AND content_type = 'mula'
+            ORDER BY original_paragraph
+        """, (book_id,))
+        
+        all_chunks = cursor.fetchall()
+        
+        # Reconstruct paragraphs by detecting number patterns
+        paragraphs = self.reconstruct_paragraphs(all_chunks)
+        
+        # Generate clean HTML - overwrite mula_di_01.html
+        filename = "mula_di_01.html"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Clean Paragraph View: {book_id}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; max-width: 800px; }}
+                .para {{ margin: 20px 0; border-left: 3px solid #2c5530; padding-left: 15px; }}
+                .para-number {{ font-weight: bold; color: #2c5530; margin-right: 10px; }}
+                .pali {{ color: #333; line-height: 1.6; }}
+                .trans {{ color: #666; line-height: 1.6; font-style: italic; margin-top: 8px; }}
+            </style>
+        </head>
+        <body>
+            <h1>Dīgha Nikāya 1 - Mūla Text</h1>
+            <h2>Clean Paragraph Reconstruction</h2>
+            
+            <div class="content">
+        """
+        
+        for i, (pali, trans) in enumerate(paragraphs, 1):
+            html_content += f"""
+                <div class="para">
+                    <div class="pali">
+                        <span class="para-number">{i}.</span>
+                        {pali}
+                    </div>
+                    <div class="trans">
+                        <span class="para-number">{i}.</span>
+                        {trans}
+                    </div>
+                </div>
+            """
+        
+        html_content += """
+            </div>
+        </body>
+        </html>
+        """
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"📄 Clean HTML generated: {filename}")
+        return filename
+    
+    def reconstruct_paragraphs(self, chunks):
+        """Reconstruct paragraphs from chunked content"""
+        paragraphs = []
+        
+        # Simple reconstruction: split by number patterns and create artificial paragraphs
+        current_pali = ""
+        current_trans = ""
+        
+        for pali_chunk, trans_chunk in chunks:
+            # Add to current paragraph
+            current_pali += " " + pali_chunk if current_pali else pali_chunk
+            current_trans += " " + trans_chunk if current_trans else trans_chunk
+            
+            # If we have substantial content, consider it a paragraph
+            if len(current_pali) > 500:  # Arbitrary threshold
+                paragraphs.append((current_pali.strip(), current_trans.strip()))
+                current_pali = ""
+                current_trans = ""
+        
+        # Don't forget the last paragraph
+        if current_pali:
+            paragraphs.append((current_pali.strip(), current_trans.strip()))
+        
+        return paragraphs
+
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
         'translations.db'
     )
     # ~ translator.generate_html_for_all_suttas()
-    translator.generate_simple_concatenated_html("mula_di_01")
+    translator.generate_clean_paragraph_html("mula_di_01")

@@ -2616,11 +2616,172 @@ class SuttaTranslator:
         
         print(f"🎉 Proper HTML generated: {filename}")
         return filename
-          
+  
+    def create_proper_mapping_db(self):
+        """Create a new database for proper paragraph mapping"""
+        import sqlite3
+        self.proper_db = sqlite3.connect("proper_translations.db")
+        cursor = self.proper_db.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS paragraph_translations (
+                book_id TEXT,
+                paragraph_number INTEGER,
+                pali_text TEXT,
+                english_text TEXT,
+                sutta_name TEXT,
+                PRIMARY KEY (book_id, paragraph_number)
+            )
+        """)
+        self.proper_db.commit()
+        print("✅ Created proper mapping database")
+    
+    def reprocess_existing_translations(self, book_id):
+        """Reorganize existing translations without new API calls"""
+        
+        print("🔄 Reprocessing existing translations...")
+        
+        # 1. Get all translation chunks we already have
+        existing_chunks = self.get_all_translation_chunks(book_id)
+        print(f"   📦 Found {len(existing_chunks)} existing translation chunks")
+        
+        # 2. Get original paragraph structure  
+        original_paragraphs = self.get_original_paragraphs(book_id)
+        print(f"   📖 Found {len(original_paragraphs)} original paragraphs")
+        
+        # 3. Simple 1:1 mapping (fastest approach)
+        self.simple_1to1_mapping(book_id, original_paragraphs, existing_chunks)
+        
+        print("✅ Reprocessing complete!")
+    
+    def get_all_translation_chunks(self, book_id):
+        """Get all existing translation chunks"""
+        cursor = self.translation_db.cursor()
+        cursor.execute("""
+            SELECT translated_content 
+            FROM translations 
+            WHERE original_book_id = ? AND content_type = 'mula'
+            ORDER BY original_paragraph
+        """, (book_id,))
+        
+        chunks = []
+        for (translated,) in cursor.fetchall():
+            chunks.append(translated)
+        return chunks
+    
+    def get_original_paragraphs(self, book_id):
+        """Get original Pali paragraphs"""
+        cursor = self.main_db.cursor()
+        cursor.execute("""
+            SELECT p.paragraph_number, pa.content
+            FROM paragraphs p
+            JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+            WHERE p.book_id = ? 
+            ORDER BY p.paragraph_number
+        """, (book_id,))
+        
+        paragraphs = []
+        for para_num, content in cursor.fetchall():
+            clean_content = re.sub(r'<[^>]+>', '', content)
+            paragraphs.append({
+                'number': para_num,
+                'pali': clean_content.strip()
+            })
+        return paragraphs
+    
+    def simple_1to1_mapping(self, book_id, original_paragraphs, translation_chunks):
+        """Simple 1:1 mapping - assume same order and count"""
+        
+        # Combine all translation content
+        full_translation = " ".join(translation_chunks)
+        
+        # For now, assign the full translation to each paragraph
+        # This is a placeholder - we'll improve this later
+        cursor = self.proper_db.cursor()
+        
+        for i, para in enumerate(original_paragraphs):
+            # Simple approach: use full translation for now
+            # We'll implement smart paragraph extraction in the next step
+            cursor.execute("""
+                INSERT OR REPLACE INTO paragraph_translations 
+                (book_id, paragraph_number, pali_text, english_text, sutta_name)
+                VALUES (?, ?, ?, ?, ?)
+            """, (book_id, para['number'], para['pali'], full_translation, "DN1-13"))
+        
+        self.proper_db.commit()
+        print(f"   💾 Saved {len(original_paragraphs)} paragraphs to proper mapping")
+    
+    def generate_final_proper_html(self, book_id):
+        """Generate HTML from the properly mapped database"""
+        
+        cursor = self.proper_db.cursor()
+        cursor.execute("""
+            SELECT paragraph_number, pali_text, english_text 
+            FROM paragraph_translations 
+            WHERE book_id = ?
+            ORDER BY paragraph_number
+        """, (book_id,))
+        
+        paragraphs = cursor.fetchall()
+        
+        filename = "mula_di_01_proper.html"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Dīgha Nikāya 1 - Proper Mapping</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .container {{ max-width: 800px; margin: 0 auto; }}
+                .header {{ text-align: center; margin-bottom: 30px; }}
+                .para {{ margin: 20px 0; padding: 15px; border-left: 3px solid #2c5530; }}
+                .para-number {{ font-weight: bold; color: #2c5530; }}
+                .pali {{ margin-bottom: 10px; }}
+                .trans {{ color: #555; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Dīgha Nikāya 1 - Proper Paragraph Mapping</h1>
+                    <p>✅ Using reprocessed translations without new API calls</p>
+                </div>
+        """
+        
+        for para_num, pali, trans in paragraphs[:50]:  # Show first 50 as sample
+            html_content += f"""
+                <div class="para">
+                    <div class="pali">
+                        <span class="para-number">{para_num}.</span>
+                        {pali}
+                    </div>
+                    <div class="trans">
+                        {trans[:200]}... [full translation available]
+                    </div>
+                </div>
+            """
+        
+        html_content += """
+            </div>
+        </body>
+        </html>
+        """
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"🎉 Final proper HTML: {filename}")
+        return filename
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
         'translations.db'
     )
-    # ~ translator.generate_html_for_all_suttas()
-    translator.generate_proper_sutta_html("mula_di_01")
+    translator.create_proper_mapping_db()
+    
+    # 2. Reprocess existing translations (NO API CALLS)
+    translator.reprocess_existing_translations("mula_di_01")
+    
+    # 3. Generate proper HTML
+    translator.generate_final_proper_html("mula_di_01")

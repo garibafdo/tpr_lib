@@ -2044,10 +2044,76 @@ class SuttaTranslator:
         """, (book_id, start_para, end_para))
         
         return cursor.fetchall()
+        
+    def generate_simple_concatenated_html(self, book_id):
+        """Generate simple HTML by concatenating all translations in order"""
+        
+        cursor = self.translation_db.cursor()
+        
+        # Get all mula chunks in order
+        cursor.execute("""
+            SELECT original_content, translated_content 
+            FROM translations 
+            WHERE original_book_id = ? AND content_type = 'mula'
+            ORDER BY 
+                CASE 
+                    WHEN sutta_name = 'complete_mula_di_01' THEN 0
+                    ELSE 1
+                END,
+                original_paragraph
+        """, (book_id,))
+        
+        all_chunks = cursor.fetchall()
+        
+        # Simply concatenate everything
+        full_pali = ""
+        full_trans = ""
+        
+        for original, translated in all_chunks:
+            full_pali += original + "\n\n"
+            full_trans += translated + "\n\n"
+        
+        # Create simple HTML
+        filename = f"simple_{book_id}.html"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Simple Concatenated: {book_id}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .section {{ margin: 30px 0; }}
+                .pali {{ color: #333; white-space: pre-wrap; }}
+                .trans {{ color: #666; white-space: pre-wrap; font-style: italic; }}
+            </style>
+        </head>
+        <body>
+            <h1>Simple Concatenated View: {book_id}</h1>
+            
+            <div class="section">
+                <h2>Pali Text ({len(full_pali)} chars)</h2>
+                <div class="pali">{full_pali}</div>
+            </div>
+            
+            <div class="section">
+                <h2>Translation ({len(full_trans)} chars)</h2>
+                <div class="trans">{full_trans}</div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"📄 Simple concatenated HTML: {filename}")
+        return filename
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
         'translations.db'
     )
     # ~ translator.generate_html_for_all_suttas()
-    translator.generate_debug_html_with_real_paragraphs("mula_di_01")
+    translator.generate_simple_concatenated_html("mula_di_01")

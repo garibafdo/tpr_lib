@@ -347,9 +347,10 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
         </div>
 
         <div class="controls">
-            <button class="btn toggle active" onclick="toggleView('pali')">Pali Text</button>
-            <button class="btn toggle active" onclick="toggleView('english')">English Translation</button>
-            <button class="btn toggle active" onclick="toggleView('commentary')">Commentary</button>
+            <button class="btn toggle active" onclick="toggleView('mula_pali')">Mula Pali</button>
+            <button class="btn toggle active" onclick="toggleView('mula_english')">Mula English</button>
+            <button class="btn toggle active" onclick="toggleView('commentary_pali')">Commentary Pali</button>
+            <button class="btn toggle active" onclick="toggleView('commentary_english')">Commentary English</button>
             <button class="btn toggle" onclick="toggleScript()">Devanagari Script</button>
             <button class="btn" onclick="toggleTheme()">Dark/Light</button>
         </div>
@@ -367,12 +368,12 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
                     <div class="para-number">Paragraph {item['paragraph_number']}</div>
                 </div>
 
-                <div class="section">
+                <div class="section mula-pali-section">
                     <div class="section-title">Mūla (Source Text)</div>
                     <div class="text-content pali-text" data-pali="{escape_html(item['mula_pali'])}">{escape_html(item['mula_pali'])}</div>
                 </div>
 
-                <div class="section">
+                <div class="section mula-english-section">
                     <div class="section-title">English Translation</div>
                     <div class="text-content english-text">{escape_html(item['mula_english'])}</div>
                 </div>
@@ -383,12 +384,12 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
                 <div class="commentary-section">
                     <div class="section-title">Aṭṭhakathā (Commentary)</div>
                     
-                    <div class="section">
+                    <div class="section commentary-pali-section">
                         <div class="section-title">Pali Commentary</div>
                         <div class="text-content pali-text" data-pali="{escape_html(item['commentary_pali'])}">{escape_html(item['commentary_pali'])}</div>
                     </div>
 
-                    <div class="section">
+                    <div class="section commentary-english-section">
                         <div class="section-title">English Commentary</div>
                         <div class="text-content english-text">{escape_html(item['commentary_english'])}</div>
                     </div>
@@ -415,9 +416,10 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
 
     <script>
         let currentView = {{
-            pali: true,
-            english: true,
-            commentary: true,
+            mula_pali: true,
+            mula_english: true,
+            commentary_pali: true,
+            commentary_english: true,
             devanagari: false
         }};
 
@@ -425,7 +427,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             currentView[type] = !currentView[type];
             const buttons = document.querySelectorAll('.btn.toggle');
             buttons.forEach(btn => {{
-                if (btn.textContent.toLowerCase().includes(type)) {{
+                if (btn.textContent.toLowerCase().includes(type.replace('_', ' '))) {{
                     btn.classList.toggle('active', currentView[type]);
                 }}
             }});
@@ -444,7 +446,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
         }}
 
-                function convertToDevanagari(text) {{
+        function convertToDevanagari(text) {{
             if (!text) return text;
             
             text = text.toLowerCase();
@@ -486,7 +488,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
                     i++;
                     continue;
                 }}
-                if (' ,.?!–-""\'\'‘’"".'.includes(char)) {{
+                if (' ,.?!–-""\\'\\'‘’"".'.includes(char)) {{
                     result += char;
                     i++;
                     continue;
@@ -558,14 +560,17 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
 
         function updateDisplay() {{
             // Handle view toggles
-            document.querySelectorAll('.section').forEach(section => {{
-                if (section.parentElement.classList.contains('commentary-section')) {{
-                    section.style.display = currentView.commentary ? 'block' : 'none';
-                }} else if (section.querySelector('.pali-text')) {{
-                    section.style.display = currentView.pali ? 'block' : 'none';
-                }} else if (section.querySelector('.english-text')) {{
-                    section.style.display = currentView.english ? 'block' : 'none';
-                }}
+            document.querySelectorAll('.mula-pali-section').forEach(section => {{
+                section.style.display = currentView.mula_pali ? 'block' : 'none';
+            }});
+            document.querySelectorAll('.mula-english-section').forEach(section => {{
+                section.style.display = currentView.mula_english ? 'block' : 'none';
+            }});
+            document.querySelectorAll('.commentary-pali-section').forEach(section => {{
+                section.style.display = currentView.commentary_pali ? 'block' : 'none';
+            }});
+            document.querySelectorAll('.commentary-english-section').forEach(section => {{
+                section.style.display = currentView.commentary_english ? 'block' : 'none';
             }});
 
             // Handle Devanagari conversion
@@ -576,11 +581,6 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
                 }} else {{
                     element.innerHTML = originalText;
                 }}
-            }});
-
-            // Hide/show entire commentary sections
-            document.querySelectorAll('.commentary-section').forEach(section => {{
-                section.style.display = currentView.commentary ? 'block' : 'none';
             }});
         }}
 

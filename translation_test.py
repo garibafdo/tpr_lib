@@ -87,150 +87,312 @@ class SuttaTranslator:
             return []
     
     
-    def translate_complete_sutta(self, sutta_name, mula_book_id=None, start_paragraph=None, end_paragraph=None, commentary_book_id=None):
-        """Generic function to translate any complete sutta"""
-        print(f"🚀 TRANSLATING COMPLETE {sutta_name.upper()}")
-        print("=" * 60)
+    # ~ def translate_complete_sutta(self, sutta_name, mula_book_id=None, start_paragraph=None, end_paragraph=None, commentary_book_id=None):
+        # ~ """Generic function to translate any complete sutta"""
+        # ~ print(f"🚀 TRANSLATING COMPLETE {sutta_name.upper()}")
+        # ~ print("=" * 60)
         
-        # Auto-detect sutta info if not provided
-        if not mula_book_id:
-            sutta_info = self.get_sutta_info(sutta_name)
-            if not sutta_info:
-                return
-            mula_book_id, start_page, sutta_name = sutta_info[0]
-            start_paragraph, end_paragraph = self.find_sutta_paragraph_range(mula_book_id, start_page)
+        # ~ # Auto-detect sutta info if not provided
+        # ~ if not mula_book_id:
+            # ~ sutta_info = self.get_sutta_info(sutta_name)
+            # ~ if not sutta_info:
+                # ~ return
+            # ~ mula_book_id, start_page, sutta_name = sutta_info[0]
+            # ~ start_paragraph, end_paragraph = self.find_sutta_paragraph_range(mula_book_id, start_page)
         
-        if not commentary_book_id:
-            # Derive commentary book from mula book (mula_di_01 → attha_di_01)
-            commentary_book_id = mula_book_id.replace('mula_', 'attha_')
+        # ~ if not commentary_book_id:
+            # ~ # Derive commentary book from mula book (mula_di_01 → attha_di_01)
+            # ~ commentary_book_id = mula_book_id.replace('mula_', 'attha_')
         
-        print(f"📖 Mula: {mula_book_id} paragraphs {start_paragraph}-{end_paragraph}")
-        print(f"📝 Commentary: {commentary_book_id}")
+        # ~ print(f"📖 Mula: {mula_book_id} paragraphs {start_paragraph}-{end_paragraph}")
+        # ~ print(f"📝 Commentary: {commentary_book_id}")
         
-        cursor = self.main_db.cursor()
+        # ~ cursor = self.main_db.cursor()
         
-        # Get UNIQUE mula content
-        cursor.execute("""
-        SELECT DISTINCT pa.content
-        FROM paragraphs p
-        JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
-        WHERE p.book_id = ? 
-        AND p.paragraph_number BETWEEN ? AND ?
-        ORDER BY p.paragraph_number
-        """, (mula_book_id, start_paragraph, end_paragraph))
+        # ~ # Get UNIQUE mula content
+        # ~ cursor.execute("""
+        # ~ SELECT DISTINCT pa.content
+        # ~ FROM paragraphs p
+        # ~ JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+        # ~ WHERE p.book_id = ? 
+        # ~ AND p.paragraph_number BETWEEN ? AND ?
+        # ~ ORDER BY p.paragraph_number
+        # ~ """, (mula_book_id, start_paragraph, end_paragraph))
         
-        mula_contents = cursor.fetchall()
+        # ~ mula_contents = cursor.fetchall()
         
-        # Combine unique mula content
-        full_mula_text = ""
-        for (content,) in mula_contents:
-            clean_content = re.sub(r'<[^>]+>', '', content)
-            if sutta_name.lower() not in clean_content.lower() or full_mula_text == "":
-                full_mula_text += clean_content + "\n\n"
+        # ~ # Combine unique mula content
+        # ~ full_mula_text = ""
+        # ~ for (content,) in mula_contents:
+            # ~ clean_content = re.sub(r'<[^>]+>', '', content)
+            # ~ if sutta_name.lower() not in clean_content.lower() or full_mula_text == "":
+                # ~ full_mula_text += clean_content + "\n\n"
         
-        print(f"📖 {sutta_name} Mula: {len(full_mula_text)} chars")
+        # ~ print(f"📖 {sutta_name} Mula: {len(full_mula_text)} chars")
         
-        # Get UNIQUE commentary content
-        cursor.execute("""
-        SELECT DISTINCT pa.content
-        FROM paragraph_mapping pm
-        JOIN pages pa ON pa.bookid = pm.exp_book_id AND pa.page = pm.exp_page_number
-        WHERE pm.base_book_id = ? 
-        AND pm.paragraph BETWEEN ? AND ?
-        AND pm.exp_book_id = ?
-        ORDER BY pm.exp_page_number
-        """, (mula_book_id, start_paragraph, end_paragraph, commentary_book_id))
+        # ~ # Get UNIQUE commentary content
+        # ~ cursor.execute("""
+        # ~ SELECT DISTINCT pa.content
+        # ~ FROM paragraph_mapping pm
+        # ~ JOIN pages pa ON pa.bookid = pm.exp_book_id AND pa.page = pm.exp_page_number
+        # ~ WHERE pm.base_book_id = ? 
+        # ~ AND pm.paragraph BETWEEN ? AND ?
+        # ~ AND pm.exp_book_id = ?
+        # ~ ORDER BY pm.exp_page_number
+        # ~ """, (mula_book_id, start_paragraph, end_paragraph, commentary_book_id))
         
-        commentary_contents = cursor.fetchall()
+        # ~ commentary_contents = cursor.fetchall()
         
-        # Combine unique commentary content
-        full_commentary_text = ""
-        for (content,) in commentary_contents:
-            clean_content = re.sub(r'<[^>]+>', '', content)
-            full_commentary_text += clean_content + "\n\n"
+        # ~ # Combine unique commentary content
+        # ~ full_commentary_text = ""
+        # ~ for (content,) in commentary_contents:
+            # ~ clean_content = re.sub(r'<[^>]+>', '', content)
+            # ~ full_commentary_text += clean_content + "\n\n"
         
-        print(f"📝 {sutta_name} Commentary: {len(full_commentary_text)} chars")
+        # ~ print(f"📝 {sutta_name} Commentary: {len(full_commentary_text)} chars")
         
-        # Smart chunking for mula text
-        mula_chunks = self.chunk_text(full_mula_text, max_chars=3500)
-        print(f"📦 Mula split into {len(mula_chunks)} chunks")
+        # ~ # Smart chunking for mula text
+        # ~ mula_chunks = self.chunk_text(full_mula_text, max_chars=3500)
+        # ~ print(f"📦 Mula split into {len(mula_chunks)} chunks")
         
-        # Translate mula chunks
-        mula_translations = []
-        with tqdm(total=len(mula_chunks), desc="Mula chunks") as pbar:
-          for i, chunk in enumerate(tqdm(mula_chunks, desc="Translating mula")):
-              chunk_id = f"{sutta_name}_mula_{i+1}"
+        # ~ # Translate mula chunks
+        # ~ mula_translations = []
+        # ~ with tqdm(total=len(mula_chunks), desc="Mula chunks") as pbar:
+          # ~ for i, chunk in enumerate(tqdm(mula_chunks, desc="Translating mula")):
+              # ~ chunk_id = f"{sutta_name}_mula_{i+1}"
               
-              # Check if already translated
-              if self.is_chunk_translated(sutta_name, chunk_id, 'mula'):
-                  print(f"⏭️  Skipping already translated: {chunk_id}")
-                  existing = self.get_existing_translation(sutta_name, chunk_id, 'mula')
-                  mula_translations.append(existing)
-                  continue
+              # ~ # Check if already translated
+              # ~ if self.is_chunk_translated(sutta_name, chunk_id, 'mula'):
+                  # ~ print(f"⏭️  Skipping already translated: {chunk_id}")
+                  # ~ existing = self.get_existing_translation(sutta_name, chunk_id, 'mula')
+                  # ~ mula_translations.append(existing)
+                  # ~ continue
               
-              print(f"\n🌐 Translating Mula Chunk {i+1}/{len(mula_chunks)}...")
-              translation = self.translate_text(chunk, f"{sutta_name} Mula Part {i+1}")
+              # ~ print(f"\n🌐 Translating Mula Chunk {i+1}/{len(mula_chunks)}...")
+              # ~ translation = self.translate_text(chunk, f"{sutta_name} Mula Part {i+1}")
               
-              # Save with chunk-level tracking
-              self.save_translation_chunk(
-                  sutta_name, mula_book_id, start_paragraph, chunk_id,
-                  'mula', chunk, translation
-              )
+              # ~ # Save with chunk-level tracking
+              # ~ self.save_translation_chunk(
+                  # ~ sutta_name, mula_book_id, start_paragraph, chunk_id,
+                  # ~ 'mula', chunk, translation
+              # ~ )
               
-              mula_translations.append(translation)
-              if i < len(mula_chunks) - 1:
-                  time.sleep(3)
-              pbar.update(1)
+              # ~ mula_translations.append(translation)
+              # ~ if i < len(mula_chunks) - 1:
+                  # ~ time.sleep(3)
+              # ~ pbar.update(1)
           
-        full_mula_translation = "\n\n".join(mula_translations)
+        # ~ full_mula_translation = "\n\n".join(mula_translations)
         
-        time.sleep(5)
+        # ~ time.sleep(5)
         
-        # Smart chunking for commentary text
-        commentary_chunks = self.chunk_text(full_commentary_text, max_chars=3500)
-        print(f"📦 Commentary split into {len(commentary_chunks)} chunks")
+        # ~ # Smart chunking for commentary text
+        # ~ commentary_chunks = self.chunk_text(full_commentary_text, max_chars=3500)
+        # ~ print(f"📦 Commentary split into {len(commentary_chunks)} chunks")
         
-        # Translate commentary chunks
-        commentary_translations = []
-        with tqdm(total=len(commentary_chunks), desc="Commentary chunks") as pbar:
-          for i, chunk in enumerate(commentary_chunks):
-              chunk_id = f"{sutta_name}_commentary_{i+1}"
+        # ~ # Translate commentary chunks
+        # ~ commentary_translations = []
+        # ~ with tqdm(total=len(commentary_chunks), desc="Commentary chunks") as pbar:
+          # ~ for i, chunk in enumerate(commentary_chunks):
+              # ~ chunk_id = f"{sutta_name}_commentary_{i+1}"
               
-              # Check if already translated
-              if self.is_chunk_translated(sutta_name, chunk_id, 'commentary'):
-                  print(f"⏭️  Skipping already translated: {chunk_id}")
-                  existing = self.get_existing_translation(sutta_name, chunk_id, 'commentary')
-                  commentary_translations.append(existing)
-                  continue
+              # ~ # Check if already translated
+              # ~ if self.is_chunk_translated(sutta_name, chunk_id, 'commentary'):
+                  # ~ print(f"⏭️  Skipping already translated: {chunk_id}")
+                  # ~ existing = self.get_existing_translation(sutta_name, chunk_id, 'commentary')
+                  # ~ commentary_translations.append(existing)
+                  # ~ continue
               
-              print(f"\n🌐 Translating Commentary Chunk {i+1}/{len(commentary_chunks)}...")
-              translation = self.translate_text(chunk, f"{sutta_name} Commentary Part {i+1}")
+              # ~ print(f"\n🌐 Translating Commentary Chunk {i+1}/{len(commentary_chunks)}...")
+              # ~ translation = self.translate_text(chunk, f"{sutta_name} Commentary Part {i+1}")
               
-              # Save with chunk-level tracking
-              self.save_translation_chunk(
-                  sutta_name, commentary_book_id, start_paragraph, chunk_id,
-                  'commentary', chunk, translation
-              )
+              # ~ # Save with chunk-level tracking
+              # ~ self.save_translation_chunk(
+                  # ~ sutta_name, commentary_book_id, start_paragraph, chunk_id,
+                  # ~ 'commentary', chunk, translation
+              # ~ )
               
-              commentary_translations.append(translation)
-              if i < len(commentary_chunks) - 1:
-                  time.sleep(3)
-              pbar.update(1)
+              # ~ commentary_translations.append(translation)
+              # ~ if i < len(commentary_chunks) - 1:
+                  # ~ time.sleep(3)
+              # ~ pbar.update(1)
           
-        full_commentary_translation = "\n\n".join(commentary_translations)
+        # ~ full_commentary_translation = "\n\n".join(commentary_translations)
         
-        # Generate HTML
-        self.generate_sutta_html(
-            sutta_name,
-            full_mula_text, 
-            full_mula_translation,
-            full_commentary_text,
-            full_commentary_translation
-        )
+        # ~ # Generate HTML
+        # ~ self.generate_sutta_html(
+            # ~ sutta_name,
+            # ~ full_mula_text, 
+            # ~ full_mula_translation,
+            # ~ full_commentary_text,
+            # ~ full_commentary_translation
+        # ~ )
         
-        print(f"\n🎉 {sutta_name.upper()} TRANSLATION COMPLETE!")
-        print(f"📊 Total chunks: {len(mula_chunks)} mula + {len(commentary_chunks)} commentary")
-    
+        # ~ print(f"\n🎉 {sutta_name.upper()} TRANSLATION COMPLETE!")
+        # ~ print(f"📊 Total chunks: {len(mula_chunks)} mula + {len(commentary_chunks)} commentary")
+      def translate_complete_sutta(self, sutta_name, mula_book_id=None, start_paragraph=None, end_paragraph=None, commentary_book_id=None):
+          """Generic function to translate any complete sutta"""
+          print(f"🚀 TRANSLATING COMPLETE {sutta_name.upper()}")
+          print("=" * 60)
+          
+          # Auto-detect sutta info if not provided
+          if not mula_book_id:
+              sutta_info = self.get_sutta_info(sutta_name)
+              if not sutta_info:
+                  return
+              mula_book_id, start_page, sutta_name = sutta_info[0]
+              start_paragraph, end_paragraph = self.find_sutta_paragraph_range(mula_book_id, start_page)
+          
+          if not commentary_book_id:
+              # Derive commentary book from mula book (mula_di_01 → attha_di_01)
+              commentary_book_id = mula_book_id.replace('mula_', 'attha_')
+          
+          print(f"📖 Mula: {mula_book_id} paragraphs {start_paragraph}-{end_paragraph}")
+          print(f"📝 Commentary: {commentary_book_id}")
+          
+          cursor = self.main_db.cursor()
+          
+          # Get UNIQUE mula content
+          cursor.execute("""
+          SELECT DISTINCT pa.content
+          FROM paragraphs p
+          JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+          WHERE p.book_id = ? 
+          AND p.paragraph_number BETWEEN ? AND ?
+          ORDER BY p.paragraph_number
+          """, (mula_book_id, start_paragraph, end_paragraph))
+          
+          mula_contents = cursor.fetchall()
+          
+          # Combine unique mula content
+          full_mula_text = ""
+          for (content,) in mula_contents:
+              clean_content = re.sub(r'<[^>]+>', '', content)
+              if sutta_name.lower() not in clean_content.lower() or full_mula_text == "":
+                  full_mula_text += clean_content + "\n\n"
+          
+          print(f"📖 {sutta_name} Mula: {len(full_mula_text)} chars")
+          
+          # Get UNIQUE commentary content
+          cursor.execute("""
+          SELECT DISTINCT pa.content
+          FROM paragraph_mapping pm
+          JOIN pages pa ON pa.bookid = pm.exp_book_id AND pa.page = pm.exp_page_number
+          WHERE pm.base_book_id = ? 
+          AND pm.paragraph BETWEEN ? AND ?
+          AND pm.exp_book_id = ?
+          ORDER BY pm.exp_page_number
+          """, (mula_book_id, start_paragraph, end_paragraph, commentary_book_id))
+          
+          commentary_contents = cursor.fetchall()
+          
+          # Combine unique commentary content
+          full_commentary_text = ""
+          for (content,) in commentary_contents:
+              clean_content = re.sub(r'<[^>]+>', '', content)
+              full_commentary_text += clean_content + "\n\n"
+          
+          print(f"📝 {sutta_name} Commentary: {len(full_commentary_text)} chars")
+          
+          # Smart chunking for mula text
+          mula_chunks = self.chunk_text(full_mula_text, max_chars=3500)
+          print(f"📦 Mula split into {len(mula_chunks)} chunks")
+          
+          # Translate mula chunks with clean progress
+          mula_translations = []
+          with tqdm(total=len(mula_chunks), desc="📚 Mula Translation", position=0) as main_bar:
+              with tqdm(total=1, desc="Current chunk", position=1, leave=False) as chunk_bar:
+                  for i, chunk in enumerate(mula_chunks):
+                      chunk_id = f"{sutta_name}_mula_{i+1}"
+                      
+                      # Update progress descriptions
+                      main_bar.set_description(f"📚 Mula {i+1}/{len(mula_chunks)}")
+                      chunk_bar.set_description(f"📝 {len(chunk)} chars")
+                      
+                      # Check if already translated
+                      if self.is_chunk_translated(sutta_name, chunk_id, 'mula'):
+                          existing = self.get_existing_translation(sutta_name, chunk_id, 'mula')
+                          mula_translations.append(existing)
+                          chunk_bar.set_description("⏭️ Skipped (already done)")
+                          chunk_bar.reset()
+                          main_bar.update(1)
+                          continue
+                      
+                      # Translate
+                      translation = self.translate_text(chunk, f"{sutta_name} Mula Part {i+1}")
+                      
+                      # Save with chunk-level tracking
+                      self.save_translation_chunk(
+                          sutta_name, mula_book_id, start_paragraph, chunk_id,
+                          'mula', chunk, translation
+                      )
+                      
+                      mula_translations.append(translation)
+                      chunk_bar.set_description(f"✅ {len(translation)} chars")
+                      chunk_bar.reset()
+                      
+                      if i < len(mula_chunks) - 1:
+                          time.sleep(3)
+                      main_bar.update(1)
+          
+          full_mula_translation = "\n\n".join(mula_translations)
+          
+          time.sleep(5)
+          
+          # Smart chunking for commentary text
+          commentary_chunks = self.chunk_text(full_commentary_text, max_chars=3500)
+          print(f"📦 Commentary split into {len(commentary_chunks)} chunks")
+          
+          # Translate commentary chunks with clean progress
+          commentary_translations = []
+          with tqdm(total=len(commentary_chunks), desc="📝 Commentary Translation", position=0) as main_bar:
+              with tqdm(total=1, desc="Current chunk", position=1, leave=False) as chunk_bar:
+                  for i, chunk in enumerate(commentary_chunks):
+                      chunk_id = f"{sutta_name}_commentary_{i+1}"
+                      
+                      # Update progress descriptions
+                      main_bar.set_description(f"📝 Commentary {i+1}/{len(commentary_chunks)}")
+                      chunk_bar.set_description(f"📝 {len(chunk)} chars")
+                      
+                      # Check if already translated
+                      if self.is_chunk_translated(sutta_name, chunk_id, 'commentary'):
+                          existing = self.get_existing_translation(sutta_name, chunk_id, 'commentary')
+                          commentary_translations.append(existing)
+                          chunk_bar.set_description("⏭️ Skipped (already done)")
+                          chunk_bar.reset()
+                          main_bar.update(1)
+                          continue
+                      
+                      # Translate
+                      translation = self.translate_text(chunk, f"{sutta_name} Commentary Part {i+1}")
+                      
+                      # Save with chunk-level tracking
+                      self.save_translation_chunk(
+                          sutta_name, commentary_book_id, start_paragraph, chunk_id,
+                          'commentary', chunk, translation
+                      )
+                      
+                      commentary_translations.append(translation)
+                      chunk_bar.set_description(f"✅ {len(translation)} chars")
+                      chunk_bar.reset()
+                      
+                      if i < len(commentary_chunks) - 1:
+                          time.sleep(3)
+                      main_bar.update(1)
+          
+          full_commentary_translation = "\n\n".join(commentary_translations)
+          
+          # Generate HTML
+          self.generate_sutta_html(
+              sutta_name,
+              full_mula_text, 
+              full_mula_translation,
+              full_commentary_text,
+              full_commentary_translation
+          )
+          
+          print(f"\n🎉 {sutta_name.upper()} TRANSLATION COMPLETE!")
+          print(f"📊 Total chunks: {len(mula_chunks)} mula + {len(commentary_chunks)} commentary")    
     def chunk_text(self, text, max_chars=3500):
         """Split text into chunks at paragraph boundaries"""
         if len(text) <= max_chars:

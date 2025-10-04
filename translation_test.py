@@ -2204,10 +2204,183 @@ class SuttaTranslator:
         
         return paragraphs
 
+  
+    def extract_numbered_paragraphs(self, full_pali, full_trans):
+        """Extract paragraphs using actual numbering from Pali text"""
+        import re
+        
+        paragraphs = []
+        
+        # Find all numbered sections in Pali text
+        pali_matches = list(re.finditer(r'(\d+)\.\s+(.*?)(?=\d+\.|$)', full_pali, re.DOTALL))
+        trans_matches = list(re.finditer(r'(\d+)\.\s+(.*?)(?=\d+\.|$)', full_trans, re.DOTALL))
+        
+        # Create mapping for translations
+        trans_map = {int(m.group(1)): m.group(2).strip() for m in trans_matches}
+        
+        for match in pali_matches:
+            para_num = int(match.group(1))
+            pali_text = match.group(2).strip()
+            trans_text = trans_map.get(para_num, "Translation not found")
+            
+            paragraphs.append((para_num, pali_text, trans_text))
+        
+        return paragraphs
+  
+    def generate_final_sutta_html(self, book_id):
+        """Generate final HTML with actual paragraph numbers from original Pali"""
+        
+        cursor = self.translation_db.cursor()
+        
+        # Get all translation chunks
+        cursor.execute("""
+            SELECT original_content, translated_content 
+            FROM translations 
+            WHERE original_book_id = ? AND content_type = 'mula'
+            ORDER BY original_paragraph
+        """, (book_id,))
+        
+        all_chunks = cursor.fetchall()
+        
+        # Combine all content
+        full_pali = " ".join([chunk[0] for chunk in all_chunks])
+        full_trans = " ".join([chunk[1] for chunk in all_chunks])
+        
+        # Extract paragraphs with actual numbers from the Pali text
+        paragraphs = self.extract_numbered_paragraphs(full_pali, full_trans)
+        
+        # Calculate statistics - FIXED: use p[1] for pali, p[2] for trans
+        total_paras = len(paragraphs)
+        total_pali_chars = sum(len(p[1]) for p in paragraphs)
+        total_trans_chars = sum(len(p[2]) for p in paragraphs)
+        
+        # Generate final HTML
+        filename = "mula_di_01.html"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Dīgha Nikāya 1 - Complete Translation</title>
+            <style>
+                body {{ 
+                    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; 
+                    margin: 0; 
+                    padding: 20px;
+                    background: #f8f9fa;
+                }}
+                .container {{
+                    max-width: 900px;
+                    margin: 0 auto;
+                    background: white;
+                    padding: 40px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }}
+                .header {{
+                    text-align: center;
+                    margin-bottom: 40px;
+                    border-bottom: 2px solid #e9ecef;
+                    padding-bottom: 20px;
+                }}
+                .sutta-title {{
+                    font-size: 2.2em;
+                    color: #2c5530;
+                    margin: 0;
+                    font-weight: 300;
+                }}
+                .subtitle {{
+                    color: #6c757d;
+                    font-size: 1.1em;
+                    margin-top: 10px;
+                }}
+                .para {{
+                    margin: 25px 0;
+                    border-left: 3px solid transparent;
+                    padding-left: 20px;
+                    transition: border-color 0.3s ease;
+                }}
+                .para:hover {{
+                    border-left-color: #2c5530;
+                }}
+                .para-number {{
+                    font-weight: bold;
+                    color: #2c5530;
+                    margin-right: 12px;
+                    min-width: 50px;
+                    display: inline-block;
+                }}
+                .pali {{
+                    font-family: "Noto Sans", Arial, sans-serif;
+                    font-size: 1.1em;
+                    color: #1a1a1a;
+                    line-height: 1.7;
+                    margin-bottom: 12px;
+                }}
+                .trans {{
+                    color: #555;
+                    line-height: 1.6;
+                    padding-left: 62px;
+                    border-left: 2px solid #e9ecef;
+                    margin-left: 10px;
+                }}
+                .stats {{
+                    background: #e9ecef;
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 20px 0;
+                    text-align: center;
+                    color: #6c757d;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 class="sutta-title">Dīgha Nikāya 1</h1>
+                    <div class="subtitle">Brahmajāla Sutta and Other Suttas</div>
+                    <div class="subtitle">Complete Pali Text with English Translation</div>
+                </div>
+                
+                <div class="stats">
+                    📊 Total: {total_paras} paragraphs • 📖 {total_pali_chars:,} Pali chars • 🌐 {total_trans_chars:,} English chars
+                </div>
+                
+                <div class="content">
+        """
+        
+        for para_num, pali_text, trans_text in paragraphs:
+            html_content += f"""
+                    <div class="para">
+                        <div class="pali">
+                            <span class="para-number">{para_num}.</span>
+                            {pali_text}
+                        </div>
+                        <div class="trans">
+                            {trans_text}
+                        </div>
+                    </div>
+            """
+        
+        html_content += """
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"🎉 Final HTML generated: {filename}")
+        print(f"📊 {total_paras} paragraphs with actual numbering")
+        return filename
+
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
         'translations.db'
     )
     # ~ translator.generate_html_for_all_suttas()
-    translator.generate_clean_paragraph_html("mula_di_01")
+    translator.generate_final_sutta_html("mula_di_01")

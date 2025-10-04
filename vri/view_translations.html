@@ -174,9 +174,18 @@
             transition: all 0.3s ease;
         }
 
-        .pali-text {
-            border-left-color: #e74c3c;
-        }
+        /* Default Pali text (Roman) */
+.pali-text {
+    border-left-color: #e74c3c;
+    font-size: 1em;
+    line-height: 1.6;
+}
+
+/* When Devanagari is active */
+body.devanagari-active .pali-text {
+    font-size: 1.2em;
+    line-height: 1.8;
+}
 
         .english-text {
             border-left-color: #3498db;

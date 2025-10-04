@@ -105,64 +105,8 @@ class TipitakaMapper:
         except Exception as e:
             print(f"Error parsing mūla file {xml_file}: {e}")
     
-    def parse_commentary_file(self, xml_file: str):
-        """Parse commentary file to extract commentary texts"""
-        try:
-            tree = ET.parse(xml_file)
-            root = tree.getroot()
+      
             
-            # Get sutta info
-            sutta_num, sutta_name = self.extract_sutta_info(xml_file)
-            if not sutta_num:
-                print(f"Could not extract sutta info from {xml_file}")
-                return
-            
-            sutta_key = f"{sutta_num}. {sutta_name}"
-            
-            # Extract commentary paragraphs
-            for p in root.findall('.//p'):
-                rend = p.get('rend', '')
-                para_num = p.get('n', '').strip()
-                text = ''.join(p.itertext()).strip()
-                
-                if not text or rend in ['chapter', 'subhead']:
-                    continue
-                
-                # Handle range commentary (e.g., "483-484")
-                if '-' in para_num:
-                    start_end = para_num.split('-')
-                    if len(start_end) == 2:
-                        try:
-                            start, end = int(start_end[0]), int(start_end[1])
-                            # Apply same commentary to all paragraphs in range
-                            for para in range(start, end + 1):
-                                para_str = str(para)
-                                if para_str not in self.paragraph_texts:
-                                    self.paragraph_texts[para_str] = {'mula_text': '', 'commentary_text': '', 'sutta': sutta_key}
-                                # Append commentary (don't overwrite in case of multiple commentary files)
-                                if self.paragraph_texts[para_str]['commentary_text']:
-                                    self.paragraph_texts[para_str]['commentary_text'] += ' ' + text
-                                else:
-                                    self.paragraph_texts[para_str]['commentary_text'] = text
-                        except ValueError:
-                            # If range parsing fails, treat as single paragraph
-                            if para_num not in self.paragraph_texts:
-                                self.paragraph_texts[para_num] = {'mula_text': '', 'commentary_text': '', 'sutta': sutta_key}
-                            self.paragraph_texts[para_num]['commentary_text'] = text
-                
-                # Handle single paragraph commentary
-                elif para_num:
-                    if para_num not in self.paragraph_texts:
-                        self.paragraph_texts[para_num] = {'mula_text': '', 'commentary_text': '', 'sutta': sutta_key}
-                    # Append commentary (don't overwrite)
-                    if self.paragraph_texts[para_num]['commentary_text']:
-                        self.paragraph_texts[para_num]['commentary_text'] += ' ' + text
-                    else:
-                        self.paragraph_texts[para_num]['commentary_text'] = text
-            
-        except Exception as e:
-            print(f"Error parsing commentary file {xml_file}: {e}")
-    
     def load_all_data(self):
         """Load all mūla and commentary files"""
         print("Loading XML files...")
@@ -272,25 +216,97 @@ class TipitakaMapper:
         return mappings, pairs
     
     def print_sample(self, count: int = 3):
-        """Print sample mappings for verification"""
-        pairs = self.generate_translation_pairs()
-        
-        print(f"\n=== SAMPLE MAPPINGS (first {count} suttas) ===")
-        
-        current_sutta = None
-        printed = 0
-        
-        for pair in pairs:
-            if pair['sutta'] != current_sutta:
-                if printed >= count:
-                    break
-                current_sutta = pair['sutta']
-                printed += 1
-                print(f"\n┌── {current_sutta} ──")
+            """Print sample mappings for verification"""
+            pairs = self.generate_translation_pairs()
             
-            commentary_indicator = "✓" if pair['has_commentary'] else "✗"
-            print(f"│ {pair['paragraph_number']} [{commentary_indicator}] {pair['mula_text'][:80]}...")
+            print(f"\n=== SAMPLE MAPPINGS (first {count} suttas) ===")
+            
+            current_sutta = None
+            printed = 0
+            
+            for pair in pairs:
+                if pair['sutta'] != current_sutta:
+                    if printed >= count:
+                        break
+                    current_sutta = pair['sutta']
+                    printed += 1
+                    print(f"\n┌── {current_sutta} ──")
+                
+                commentary_indicator = "✓" if pair['has_commentary'] else "✗"
+                print(f"│ {pair['paragraph_number']} [{commentary_indicator}] {pair['mula_text'][:80]}...")
 
+    def parse_commentary_file(self, xml_file: str):
+        """Parse commentary file to extract commentary texts"""
+        try:
+            tree = ET.parse(xml_file)
+            root = tree.getroot()
+            
+            sutta_num, sutta_name = self.extract_sutta_info(xml_file)
+            if not sutta_num:
+                return
+            
+            sutta_key = f"{sutta_num}. {sutta_name}"
+            
+            # Process all paragraphs in order to handle continuation
+            current_section = None
+            current_text = []
+            
+            for p in root.findall('.//p'):
+                rend = p.get('rend', '')
+                para_num = p.get('n', '').strip()
+                text = ''.join(p.itertext()).strip()
+                
+                if not text or rend in ['chapter', 'subhead']:
+                    continue
+                
+                # If we hit a new numbered paragraph, save previous section
+                if para_num and current_section:
+                    self._apply_commentary_text(current_section, current_text, sutta_key)
+                    current_section = None
+                    current_text = []
+                
+                # Start new section if numbered paragraph
+                if para_num:
+                    current_section = para_num
+                    current_text = [text]
+                # Continue current section if bodytext
+                elif rend == 'bodytext' and current_section:
+                    current_text.append(text)
+            
+            # Don't forget the last section
+            if current_section:
+                self._apply_commentary_text(current_section, current_text, sutta_key)
+            
+        except Exception as e:
+            print(f"Error parsing commentary file {xml_file}: {e}")
+
+    def _apply_commentary_text(self, para_num: str, text_parts: List[str], sutta_key: str):
+        """Apply complete commentary text to paragraph mapping"""
+        full_text = ' '.join(text_parts)
+        
+        if '-' in para_num:
+            start_end = para_num.split('-')
+            if len(start_end) == 2:
+                try:
+                    start, end = int(start_end[0]), int(start_end[1])
+                    for para in range(start, end + 1):
+                        self._add_commentary_to_paragraph(str(para), full_text, sutta_key)
+                    return
+                except ValueError:
+                    pass
+        
+        self._add_commentary_to_paragraph(para_num, full_text, sutta_key)
+
+    def _add_commentary_to_paragraph(self, para_num: str, text: str, sutta_key: str):
+        """Add commentary text to specific paragraph"""
+        if para_num not in self.paragraph_texts:
+            self.paragraph_texts[para_num] = {'mula_text': '', 'commentary_text': '', 'sutta': sutta_key}
+        
+        if self.paragraph_texts[para_num]['commentary_text']:
+            self.paragraph_texts[para_num]['commentary_text'] += ' ' + text
+        else:
+            self.paragraph_texts[para_num]['commentary_text'] = text
+               
 def main():
     """Main execution"""
     mapper = TipitakaMapper()

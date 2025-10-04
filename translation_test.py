@@ -660,70 +660,7 @@ class SuttaTranslator:
         
         print(f"\n🎉 RESUME COMPLETE: {success_count}/{len(failed_translations)} retries successful")
     
-    def generate_sutta_html(self, sutta_name, mula_original, mula_translated, commentary_original, commentary_translated):
-        """Generate HTML for any sutta"""
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>{sutta_name} - Complete Translation</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                .section {{ border: 2px solid #333; margin: 30px 0; padding: 20px; border-radius: 10px; }}
-                .mula {{ background: #e8f5e8; }}
-                .commentary {{ background: #e3f2fd; }}
-                .header {{ background: #444; color: white; padding: 15px; border-radius: 5px; }}
-                .original {{ color: #666; font-size: 0.9em; border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 10px; }}
-                .translation {{ color: #000; line-height: 1.5; white-space: pre-wrap; }}
-                .note {{ background: #fff3cd; padding: 10px; margin: 10px 0; border-left: 4px solid #ffc107; }}
-            </style>
-        </head>
-        <body>
-            <h1>{sutta_name} - Complete Translation</h1>
-            
-            <div class="note">
-                <strong>Note:</strong> Entire sutta and commentary translated as complete texts.<br>
-                Manual paragraph matching recommended - commentary references sutta paragraph numbers.
-            </div>
-            
-            <div class="section mula">
-                <h2>{sutta_name} (Mula Text)</h2>
-                <div class="original">
-                    <strong>Original Pali:</strong>
-                    <div class="translation">{mula_original}</div>
-                </div>
-                <div class="translation">
-                    <strong>English Translation:</strong>
-                    <div class="translation">{mula_translated}</div>
-                </div>
-            </div>
-            
-            <div class="section commentary">
-                <h2>{sutta_name} Commentary (Aṭṭhakathā)</h2>
-                <div class="original">
-                    <strong>Original Pali Commentary:</strong>
-                    <div class="translation">{commentary_original}</div>
-                </div>
-                <div class="translation">
-                    <strong>English Translation:</strong>
-                    <div class="translation">{commentary_translated}</div>
-                </div>
-            </div>
-            
-            <div class="note">
-                <strong>Usage:</strong> Scroll through both texts. Commentary paragraphs reference sutta paragraph numbers.
-            </div>
-        </body>
-        </html>
-        """
-        
-        filename = f"{sutta_name.lower().replace(' ', '_')}_translation.html"
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        
-        print(f"✅ Generated {filename}")
-    
+
     def translate_sutta_by_number(self, dn_number):
         """Translate sutta by DN number (e.g., DN3, DN15)"""
         cursor = self.main_db.cursor()
@@ -1381,30 +1318,6 @@ class SuttaTranslator:
         print(f"📄 Generated study HTML: {filename}")
         return filename
     
-    def parse_numbered_paragraphs(self, pali_text, trans_text):
-        """Parse numbered paragraphs from text"""
-        paragraphs = []
-        
-        # Split by paragraph numbers (like "288. ", "289. ", etc.)
-        pali_paras = re.split(r'(\d+\.)\s+', pali_text)
-        trans_paras = re.split(r'(\d+\.)\s+', trans_text)
-        
-        # Process in pairs (number, content)
-        for i in range(1, len(pali_paras), 2):
-            if i + 1 < len(pali_paras):
-                para_num = pali_paras[i].strip('.')
-                pali_content = pali_paras[i + 1].strip()
-                
-                # Find corresponding translation
-                trans_content = self.find_translation_for_paragraph(trans_paras, para_num)
-                
-                paragraphs.append({
-                    'number': para_num,
-                    'pali': pali_content,
-                    'translation': trans_content
-                })
-        
-        return paragraphs
     
     def find_translation_for_paragraph(self, trans_paras, para_num):
         """Find translation for a specific paragraph number"""
@@ -1486,32 +1399,58 @@ class SuttaTranslator:
     def generate_html_from_translations(self, sutta_name):
         """Generate HTML for a sutta using existing chunk translations"""
         
-        # 1. Get all mula chunks for this sutta from translation_chunks table in trans_db
-        cursor = self.main_db.cursor()
+        cursor = self.translation_db.cursor()
+        
+        # DEBUG: Check what sutta names exist in the database
+        cursor.execute("SELECT DISTINCT sutta_name FROM translations")
+        existing_suttas = cursor.fetchall()
+        print(f"📋 Available suttas in database: {existing_suttas}")
+        
+        # DEBUG: Check counts for the requested sutta
+        cursor.execute("SELECT content_type, COUNT(*) FROM translations WHERE sutta_name = ? GROUP BY content_type", (sutta_name,))
+        counts = cursor.fetchall()
+        print(f"📊 Counts for '{sutta_name}': {counts}")
+        
+        # If no data found, try some common variations
+        if not counts:
+            variations = [
+                sutta_name,
+                sutta_name.upper(),
+                sutta_name.title(),
+                "Brahmajala Sutta",
+                "brahmajala sutta"
+            ]
+            for variation in variations:
+                cursor.execute("SELECT COUNT(*) FROM translations WHERE sutta_name = ?", (variation,))
+                count = cursor.fetchone()[0]
+                if count > 0:
+                    print(f"🎯 Found data with sutta_name: '{variation}' ({count} records)")
+                    sutta_name = variation
+                    break
         cursor.execute("""
-            SELECT chunk_id, original_text, translation 
-            FROM translations
-            WHERE sutta_name = ? AND chunk_type = 'mula'
-            ORDER BY chunk_id
+            SELECT original_content, translated_content 
+            FROM translations 
+            WHERE sutta_name = ? AND content_type = 'mula'
+            ORDER BY original_paragraph
         """, (sutta_name,))
         
         mula_chunks = cursor.fetchall()
         
         # 2. Get all commentary chunks for this sutta
         cursor.execute("""
-            SELECT chunk_id, original_text, translation 
+            SELECT original_content, translated_content 
             FROM translations 
-            WHERE sutta_name = ? AND chunk_type = 'commentary' 
-            ORDER BY chunk_id
+            WHERE sutta_name = ? AND content_type = 'commentary' 
+            ORDER BY original_paragraph
         """, (sutta_name,))
         
         commentary_chunks = cursor.fetchall()
         
         # 3. Combine chunks into full texts
-        full_mula_pali = "\n\n".join([chunk[1] for chunk in mula_chunks])
-        full_mula_trans = "\n\n".join([chunk[2] for chunk in mula_chunks])
-        full_comm_pali = "\n\n".join([chunk[1] for chunk in commentary_chunks])
-        full_comm_trans = "\n\n".join([chunk[2] for chunk in commentary_chunks])
+        full_mula_pali = "\n\n".join([chunk[0] for chunk in mula_chunks])
+        full_mula_trans = "\n\n".join([chunk[1] for chunk in mula_chunks])
+        full_comm_pali = "\n\n".join([chunk[0] for chunk in commentary_chunks])
+        full_comm_trans = "\n\n".join([chunk[1] for chunk in commentary_chunks])
         
         # 4. Generate HTML
         return self.generate_sutta_html(
@@ -1522,12 +1461,381 @@ class SuttaTranslator:
             full_comm_trans
         )
   
+    def generate_html_for_all_suttas(self):
+        """Generate HTML files for all suttas found in the translations database"""
+        
+        cursor = self.translation_db.cursor()
+        
+        # Get all unique sutta names from the database
+        cursor.execute("SELECT DISTINCT sutta_name FROM translations")
+        all_suttas = [row[0] for row in cursor.fetchall()]
+        
+        print(f"📚 Found {len(all_suttas)} suttas in database:")
+        
+        for sutta_name in all_suttas:
+            print(f"\n🎯 Processing: {sutta_name}")
+            
+            # Get all mula chunks for this sutta
+            cursor.execute("""
+                SELECT original_content, translated_content 
+                FROM translations 
+                WHERE sutta_name = ? AND content_type = 'mula'
+                ORDER BY original_paragraph
+            """, (sutta_name,))
+            
+            mula_chunks = cursor.fetchall()
+            
+            # Get all commentary chunks for this sutta  
+            cursor.execute("""
+                SELECT original_content, translated_content 
+                FROM translations 
+                WHERE sutta_name = ? AND content_type = 'commentary' 
+                ORDER BY original_paragraph
+            """, (sutta_name,))
+            
+            commentary_chunks = cursor.fetchall()
+            
+            print(f"   📜 Mula chunks: {len(mula_chunks)}, Commentary chunks: {len(commentary_chunks)}")
+            
+            # Skip if no data
+            if not mula_chunks:
+                print(f"   ⚠️  No mula data for {sutta_name}, skipping")
+                continue
+            
+            # Combine chunks into full texts
+            full_mula_pali = "\n\n".join([chunk[0] for chunk in mula_chunks])
+            full_mula_trans = "\n\n".join([chunk[1] for chunk in mula_chunks])
+            full_comm_pali = "\n\n".join([chunk[0] for chunk in commentary_chunks])
+            full_comm_trans = "\n\n".join([chunk[1] for chunk in commentary_chunks])
+            
+            # Generate HTML
+            filename = self.generate_sutta_html(
+                sutta_name,
+                full_mula_pali,
+                full_mula_trans,
+                full_comm_pali,
+                full_comm_trans
+            )
+            
+            print(f"   ✅ Generated: {filename}")
+    
+    def generate_sutta_html(self, sutta_name, pali_mula, trans_mula, pali_commentary, trans_commentary):
+        """Generate interactive HTML with toggleable commentary for serious Pali study"""
+        
+        # Parse paragraphs with numbers
+        mula_paragraphs = self.parse_numbered_paragraphs(pali_mula, trans_mula)
+        commentary_paragraphs = self.parse_numbered_paragraphs(pali_commentary, trans_commentary)
+        
+        # Create paragraph number mapping for commentary
+        commentary_map = {}
+        for para in commentary_paragraphs:
+            commentary_map[para['number']] = para
+        
+        # Create safe filename
+        safe_name = "".join(c for c in sutta_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_name = safe_name.replace(' ', '_').replace('ṃ', 'm').lower()
+        filename = f"{safe_name}_study.html"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>{sutta_name} - Pali Study</title>
+            <style>
+                body {{
+                    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+                    line-height: 1.6;
+                    margin: 0;
+                    padding: 20px;
+                    background: #f8f9fa;
+                    color: #333;
+                }}
+                
+                .container {{
+                    max-width: 900px;
+                    margin: 0 auto;
+                    background: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }}
+                
+                .header {{
+                    text-align: center;
+                    margin-bottom: 30px;
+                    border-bottom: 2px solid #e9ecef;
+                    padding-bottom: 20px;
+                }}
+                
+                .sutta-title {{
+                    font-size: 2em;
+                    color: #2c5530;
+                    margin: 0;
+                    font-weight: 300;
+                }}
+                
+                .controls {{
+                    display: flex;
+                    gap: 15px;
+                    margin: 20px 0;
+                    padding: 15px;
+                    background: #e9ecef;
+                    border-radius: 8px;
+                    flex-wrap: wrap;
+                }}
+                
+                .control-btn {{
+                    padding: 8px 16px;
+                    border: 1px solid #6c757d;
+                    background: white;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                }}
+                
+                .control-btn:hover {{
+                    background: #495057;
+                    color: white;
+                }}
+                
+                .control-btn.active {{
+                    background: #2c5530;
+                    color: white;
+                    border-color: #2c5530;
+                }}
+                
+                .paragraph {{
+                    margin-bottom: 25px;
+                    border-left: 3px solid transparent;
+                    padding-left: 15px;
+                    transition: border-color 0.3s ease;
+                }}
+                
+                .paragraph:hover {{
+                    border-left-color: #2c5530;
+                }}
+                
+                .para-number {{
+                    font-weight: bold;
+                    color: #2c5530;
+                    margin-right: 10px;
+                    min-width: 40px;
+                    display: inline-block;
+                }}
+                
+                .pali-text {{
+                    font-family: "Noto Sans", Arial, sans-serif;
+                    font-size: 1.1em;
+                    color: #1a1a1a;
+                    margin-bottom: 8px;
+                }}
+                
+                .translation {{
+                    color: #666;
+                    font-style: italic;
+                    margin-bottom: 15px;
+                    padding-left: 40px;
+                }}
+                
+                .commentary {{
+                    background: #f8f9fa;
+                    border: 1px solid #e9ecef;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin: 10px 0 10px 40px;
+                    display: none;
+                }}
+                
+                .commentary.show {{
+                    display: block;
+                    animation: fadeIn 0.3s ease;
+                }}
+                
+                .commentary-header {{
+                    font-weight: bold;
+                    color: #6c757d;
+                    margin-bottom: 8px;
+                    font-size: 0.9em;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }}
+                
+                .commentary-pali {{
+                    font-family: "Noto Sans", Arial, sans-serif;
+                    color: #495057;
+                    margin-bottom: 5px;
+                }}
+                
+                .commentary-trans {{
+                    color: #6c757d;
+                    font-style: italic;
+                    padding-left: 20px;
+                }}
+                
+                .pali-only .translation,
+                .pali-only .commentary-trans {{
+                    display: none;
+                }}
+                
+                .trans-only .pali-text,
+                .trans-only .commentary-pali {{
+                    display: none;
+                }}
+                
+                @keyframes fadeIn {{
+                    from {{ opacity: 0; transform: translateY(-10px); }}
+                    to {{ opacity: 1; transform: translateY(0); }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 class="sutta-title">{sutta_name}</h1>
+                </div>
+                
+                <div class="controls">
+                    <button class="control-btn" onclick="toggleCommentary()">
+                        <span id="commentary-btn">🔍 Show Commentary</span>
+                    </button>
+                    <button class="control-btn active" onclick="setViewMode('both')">Both Texts</button>
+                    <button class="control-btn" onclick="setViewMode('pali')">Pali Only</button>
+                    <button class="control-btn" onclick="setViewMode('trans')">Translation Only</button>
+                </div>
+                
+                <div class="content" id="sutta-content">
+        """
+        
+        # Generate paragraphs with optional commentary
+        for para in mula_paragraphs:
+            para_num = para['number']
+            has_commentary = para_num in commentary_map
+            
+            html_content += f"""
+                    <div class="paragraph" data-para="{para_num}">
+                        <div class="pali-text">
+                            <span class="para-number">{para_num}.</span>
+                            {para['pali']}
+                        </div>
+                        <div class="translation">
+                            {para['translation']}
+                        </div>
+            """
+            
+            if has_commentary:
+                comm = commentary_map[para_num]
+                html_content += f"""
+                        <div class="commentary" id="commentary-{para_num}">
+                            <div class="commentary-header">Commentary</div>
+                            <div class="commentary-pali">
+                                <span class="para-number">{para_num}.</span>
+                                {comm['pali']}
+                            </div>
+                            <div class="commentary-trans">
+                                {comm['translation']}
+                            </div>
+                        </div>
+                """
+            
+            html_content += "</div>"
+        
+        html_content += """
+                </div>
+            </div>
+            
+            <script>
+                let commentaryVisible = false;
+                let currentViewMode = 'both';
+                
+                function toggleCommentary() {
+                    commentaryVisible = !commentaryVisible;
+                    const commentaries = document.querySelectorAll('.commentary');
+                    const btn = document.getElementById('commentary-btn');
+                    
+                    commentaries.forEach(comm => {
+                        if (commentaryVisible) {
+                            comm.classList.add('show');
+                        } else {
+                            comm.classList.remove('show');
+                        }
+                    });
+                    
+                    btn.textContent = commentaryVisible ? '🔍 Hide Commentary' : '🔍 Show Commentary';
+                }
+                
+                function setViewMode(mode) {
+                    currentViewMode = mode;
+                    document.body.className = mode + '-only';
+                    
+                    // Update button states
+                    document.querySelectorAll('.control-btn').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    event.target.classList.add('active');
+                }
+            </script>
+        </body>
+        </html>
+        """
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        return filename
+    
+    def parse_numbered_paragraphs(self, pali_text, trans_text):
+        """Parse numbered paragraphs from text"""
+        paragraphs = []
+        
+        # Simple parsing - split by lines and look for number patterns
+        pali_lines = pali_text.split('\n')
+        trans_lines = trans_text.split('\n')
+        
+        current_para = {'number': '', 'pali': '', 'translation': ''}
+        
+        for line in pali_lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Look for lines starting with numbers (like "288. ")
+            match = re.match(r'^(\d+)\.\s+(.+)$', line)
+            if match:
+                # Save previous paragraph if exists
+                if current_para['number']:
+                    paragraphs.append(current_para.copy())
+                
+                # Start new paragraph
+                current_para = {
+                    'number': match.group(1),
+                    'pali': match.group(2),
+                    'translation': ''
+                }
+            elif current_para['number']:
+                # Continue current paragraph
+                current_para['pali'] += ' ' + line
+        
+        # Don't forget the last paragraph
+        if current_para['number']:
+            paragraphs.append(current_para)
+        
+        # Try to match translations (simplified approach)
+        for para in paragraphs:
+            for trans_line in trans_lines:
+                if trans_line.strip().startswith(para['number'] + '.'):
+                    para['translation'] = trans_line.strip()[len(para['number']) + 1:].strip()
+                    break
+        
+        return paragraphs
+
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
         'translations.db'
     )
-    
+    translator.generate_html_for_all_suttas()
     # Example: Translate DN1 Brahmajāla
     # ~ translator.translate_complete_sutta("Brahmajāla")
     
@@ -1567,5 +1875,6 @@ if __name__ == "__main__":
 
     
     # ~ translator.generate_all_sutta_html("mula_di_01")
-    translator.generate_html_from_translations("Brahmajala Sutta")
+    # ~ translator.generate_html_from_translations("Brahmajala Sutta")
+    
    

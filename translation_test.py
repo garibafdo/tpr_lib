@@ -2773,6 +2773,88 @@ class SuttaTranslator:
         
         print(f"🎉 Final proper HTML: {filename}")
         return filename
+
+    def extract_paragraph_translations(self, original_paragraphs, translation_chunks):
+        """Extract individual paragraph translations from chunked content"""
+        
+        # Combine all translation content
+        full_translation = " ".join(translation_chunks)
+        
+        # Try to find paragraph boundaries in the translation
+        paragraphs = []
+        
+        # Method 1: Look for paragraph numbers in translation
+        import re
+        number_pattern = r'(\d{1,4})\.\s+'
+        matches = list(re.finditer(number_pattern, full_translation))
+        
+        if matches:
+            print(f"   🔍 Found {len(matches)} numbered sections in translation")
+            # Extract text between numbered sections
+            for i, match in enumerate(matches):
+                start_pos = match.start()
+                if i + 1 < len(matches):
+                    end_pos = matches[i + 1].start()
+                else:
+                    end_pos = len(full_translation)
+                
+                para_text = full_translation[start_pos:end_pos].strip()
+                paragraphs.append(para_text)
+        else:
+            # Method 2: Split by approximate paragraph length
+            print("   ⚠️  No numbered sections found, using length-based splitting")
+            avg_para_length = len(full_translation) // len(original_paragraphs)
+            for i in range(len(original_paragraphs)):
+                start = i * avg_para_length
+                end = start + avg_para_length
+                if i == len(original_paragraphs) - 1:  # Last paragraph
+                    end = len(full_translation)
+                paragraphs.append(full_translation[start:end].strip())
+        
+        return paragraphs
+    
+    def proper_1to1_mapping(self, book_id, original_paragraphs, translation_chunks):
+        """Proper 1:1 mapping with extracted paragraph translations"""
+        
+        # Extract individual paragraph translations
+        paragraph_translations = self.extract_paragraph_translations(original_paragraphs, translation_chunks)
+        
+        cursor = self.proper_db.cursor()
+        
+        # Map each original paragraph to its translation
+        for i, para in enumerate(original_paragraphs):
+            if i < len(paragraph_translations):
+                translation = paragraph_translations[i]
+            else:
+                translation = f"[Translation for paragraph {para['number']}]"
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO paragraph_translations 
+                (book_id, paragraph_number, pali_text, english_text, sutta_name)
+                VALUES (?, ?, ?, ?, ?)
+            """, (book_id, para['number'], para['pali'], translation, "DN1-13"))
+        
+        self.proper_db.commit()
+        print(f"   💾 Properly mapped {len(original_paragraphs)} paragraphs")
+    
+    # Update the reprocessing function
+    def reprocess_existing_translations(self, book_id):
+        """Reorganize existing translations without new API calls"""
+        
+        print("🔄 Reprocessing existing translations...")
+        
+        # 1. Get all translation chunks we already have
+        existing_chunks = self.get_all_translation_chunks(book_id)
+        print(f"   📦 Found {len(existing_chunks)} existing translation chunks")
+        
+        # 2. Get original paragraph structure  
+        original_paragraphs = self.get_original_paragraphs(book_id)
+        print(f"   📖 Found {len(original_paragraphs)} original paragraphs")
+        
+        # 3. Use PROPER mapping instead of simple
+        self.proper_1to1_mapping(book_id, original_paragraphs, existing_chunks)
+        
+        print("✅ Reprocessing complete!")
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',

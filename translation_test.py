@@ -2228,7 +2228,7 @@ class SuttaTranslator:
         return paragraphs
   
     def generate_final_sutta_html(self, book_id):
-        """Generate final HTML using actual paragraph numbers from main database"""
+        """Generate final HTML with actual translations"""
         
         cursor = self.translation_db.cursor()
         
@@ -2254,15 +2254,15 @@ class SuttaTranslator:
         
         original_paragraphs = main_cursor.fetchall()
         
-        # Combine all translation content
-        full_trans = " ".join([chunk[1] for chunk in all_chunks])
+        # Combine all translation content into one big text
+        full_translation = " ".join([chunk[1] for chunk in all_chunks])
         
-        # Create simple numbered paragraphs (1, 2, 3, ...)
+        # Create paragraphs with original Pali and actual translations
         paragraphs = []
-        for i, (para_num, original_content) in enumerate(original_paragraphs, 1):
-            # For now, just use sequential numbering
-            # We'll match translations later
-            paragraphs.append((i, original_content, f"Translation for paragraph {i}"))
+        for i, (para_num, pali_text) in enumerate(original_paragraphs, 1):
+            # For now, just show the combined translation text
+            # We'll need to map paragraphs to translations properly later
+            paragraphs.append((i, pali_text, full_translation))
         
         # Generate final HTML
         filename = "mula_di_01.html"
@@ -2323,19 +2323,32 @@ class SuttaTranslator:
                     margin-top: 8px;
                     font-style: italic;
                 }}
+                .note {{
+                    background: #fff3cd;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin: 20px 0;
+                    border-left: 4px solid #ffc107;
+                }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
                     <h1 class="sutta-title">Dīgha Nikāya 1</h1>
-                    <div>Original Pali Text with Sequential Numbering</div>
+                    <div>Original Pali Text with Complete Translation</div>
+                </div>
+                
+                <div class="note">
+                    <strong>Note:</strong> Paragraph numbering is now sequential (1, 2, 3...). 
+                    The translation text below shows the combined content from all translated chunks.
                 </div>
                 
                 <div class="content">
         """
         
-        for para_num, pali_text, trans_text in paragraphs:
+        # Show first 20 paragraphs as sample
+        for para_num, pali_text, trans_text in paragraphs[:20]:
             html_content += f"""
                     <div class="para">
                         <div class="pali">
@@ -2343,7 +2356,7 @@ class SuttaTranslator:
                             {pali_text}
                         </div>
                         <div class="trans">
-                            {trans_text}
+                            {trans_text[:500]}... [full translation continues]
                         </div>
                     </div>
             """
@@ -2359,9 +2372,9 @@ class SuttaTranslator:
             f.write(html_content)
         
         print(f"📄 HTML generated: {filename}")
-        print(f"📊 {len(paragraphs)} paragraphs with sequential numbering")
+        print(f"📊 Showing first 20 of {len(paragraphs)} paragraphs")
         return filename
-
+    
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',

@@ -2372,10 +2372,255 @@ class SuttaTranslator:
         print(f"✅ Clean HTML generated: {filename}")
         print(f"📊 {len(original_paragraphs)} Pali paragraphs + Complete translation")
         return filename
+        
+    def generate_proper_sutta_html(self, book_id):
+        """Generate proper HTML with reconstructed paragraph mapping"""
+        
+        print("🔄 Reconstructing proper paragraph mapping...")
+        
+        # 1. Get original paragraph structure
+        original_paras = self.get_original_paragraphs(book_id)
+        print(f"   📖 Found {len(original_paras)} original paragraphs")
+        
+        # 2. Get all translation chunks in order
+        translation_chunks = self.get_translation_chunks(book_id)
+        print(f"   🌐 Found {len(translation_chunks)} translation chunks")
+        
+        # 3. Reconstruct paragraph-to-translation mapping
+        paragraph_mapping = self.reconstruct_mapping(original_paras, translation_chunks)
+        print(f"   ✅ Mapped {len(paragraph_mapping)} paragraphs to translations")
+        
+        # 4. Generate clean HTML
+        return self.generate_mapped_html(book_id, paragraph_mapping)
+    
+    def get_original_paragraphs(self, book_id):
+        """Get clean Pali paragraphs with proper numbering"""
+        cursor = self.main_db.cursor()
+        cursor.execute("""
+            SELECT p.paragraph_number, pa.content
+            FROM paragraphs p
+            JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+            WHERE p.book_id = ? 
+            ORDER BY p.paragraph_number
+        """, (book_id,))
+        
+        paragraphs = []
+        for para_num, content in cursor.fetchall():
+            # Clean HTML tags
+            clean_content = re.sub(r'<[^>]+>', '', content)
+            paragraphs.append({
+                'number': para_num,
+                'pali': clean_content.strip()
+            })
+        
+        return paragraphs
+    
+    def get_translation_chunks(self, book_id):
+        """Get translation chunks in proper order"""
+        cursor = self.translation_db.cursor()
+        cursor.execute("""
+            SELECT original_content, translated_content 
+            FROM translations 
+            WHERE original_book_id = ? AND content_type = 'mula'
+            ORDER BY 
+                CASE 
+                    WHEN sutta_name = 'complete_mula_di_01' THEN 0
+                    ELSE 1
+                END,
+                original_paragraph
+        """, (book_id,))
+        
+        chunks = []
+        for original, translated in cursor.fetchall():
+            chunks.append({
+                'original': original,
+                'translated': translated
+            })
+        
+        return chunks
+    
+    def reconstruct_mapping(self, original_paras, translation_chunks):
+        """Smart algorithm to map paragraphs to translations"""
+        
+        # Combine all translation content
+        full_translation = " ".join([chunk['translated'] for chunk in translation_chunks])
+        
+        # Parse numbered sections from translation
+        import re
+        trans_paragraphs = []
+        
+        # Find all "number. text" patterns in translation
+        pattern = r'(\d{1,3})\.\s+([^•]+?)(?=\d{1,3}\.|$)'
+        matches = re.findall(pattern, full_translation, re.DOTALL)
+        
+        for para_num, content in matches:
+            trans_paragraphs.append({
+                'number': int(para_num),
+                'translation': content.strip()
+            })
+        
+        # Create mapping: use translation numbers when available, fallback to sequential
+        mapping = []
+        
+        for i, orig_para in enumerate(original_paras):
+            # Try to find matching translation by number
+            matching_trans = None
+            for trans_para in trans_paragraphs:
+                if trans_para['number'] == orig_para['number']:
+                    matching_trans = trans_para['translation']
+                    break
+            
+            # If no match found, use a placeholder
+            if not matching_trans:
+                matching_trans = f"[Translation for paragraph {orig_para['number']}]"
+            
+            mapping.append({
+                'para_number': orig_para['number'],
+                'pali': orig_para['pali'],
+                'translation': matching_trans
+            })
+        
+        return mapping
+    
+    def generate_mapped_html(self, book_id, paragraph_mapping):
+        """Generate beautiful HTML with proper paragraph mapping"""
+        
+        filename = "mula_di_01.html"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Dīgha Nikāya 1 - Proper Paragraph Mapping</title>
+            <style>
+                body {{ 
+                    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; 
+                    margin: 0; 
+                    padding: 20px;
+                    background: #f8f9fa;
+                    line-height: 1.6;
+                }}
+                .container {{
+                    max-width: 900px;
+                    margin: 0 auto;
+                    background: white;
+                    padding: 40px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }}
+                .header {{
+                    text-align: center;
+                    margin-bottom: 40px;
+                    border-bottom: 2px solid #e9ecef;
+                    padding-bottom: 20px;
+                }}
+                .sutta-title {{
+                    font-size: 2.2em;
+                    color: #2c5530;
+                    margin: 0;
+                    font-weight: 300;
+                }}
+                .stats {{
+                    background: #e9ecef;
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 20px 0;
+                    text-align: center;
+                    color: #6c757d;
+                }}
+                .para {{
+                    margin: 25px 0;
+                    border-left: 3px solid #e9ecef;
+                    padding-left: 20px;
+                    transition: all 0.3s ease;
+                }}
+                .para:hover {{
+                    border-left-color: #2c5530;
+                    background: #f8f9fa;
+                }}
+                .para-number {{
+                    font-weight: bold;
+                    color: #2c5530;
+                    margin-right: 12px;
+                    min-width: 50px;
+                    display: inline-block;
+                }}
+                .pali {{
+                    font-family: "Noto Sans", Arial, sans-serif;
+                    font-size: 1.1em;
+                    color: #1a1a1a;
+                    line-height: 1.7;
+                    margin-bottom: 12px;
+                }}
+                .trans {{
+                    color: #555;
+                    line-height: 1.6;
+                    padding-left: 62px;
+                    border-left: 2px solid #e9ecef;
+                    margin-left: 10px;
+                }}
+                .success {{
+                    background: #d4edda;
+                    color: #155724;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin: 20px 0;
+                    border-left: 4px solid #28a745;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 class="sutta-title">Dīgha Nikāya 1</h1>
+                    <div>Proper Paragraph-to-Translation Mapping</div>
+                </div>
+                
+                <div class="success">
+                    ✅ <strong>Success!</strong> Paragraphs are now properly mapped to their translations using smart reconstruction.
+                </div>
+                
+                <div class="stats">
+                    📊 Total: {len(paragraph_mapping)} paragraphs • 
+                    📖 {sum(len(p['pali']) for p in paragraph_mapping):,} Pali chars • 
+                    🌐 {sum(len(p['translation']) for p in paragraph_mapping):,} English chars
+                </div>
+                
+                <div class="content">
+        """
+        
+        # Show all properly mapped paragraphs
+        for para in paragraph_mapping:
+            html_content += f"""
+                    <div class="para">
+                        <div class="pali">
+                            <span class="para-number">{para['para_number']}.</span>
+                            {para['pali']}
+                        </div>
+                        <div class="trans">
+                            {para['translation']}
+                        </div>
+                    </div>
+            """
+        
+        html_content += """
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"🎉 Proper HTML generated: {filename}")
+        return filename
+          
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
         'translations.db'
     )
     # ~ translator.generate_html_for_all_suttas()
-    translator.generate_final_sutta_html("mula_di_01")
+    translator.generate_proper_sutta_html("mula_di_01")

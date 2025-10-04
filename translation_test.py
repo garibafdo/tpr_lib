@@ -255,7 +255,34 @@ class SuttaTranslator:
             chunks.append(current_chunk.strip())
         
         return chunks
+    def translate_entire_book(self, mula_book_id, commentary_book_id):
+        """Translate all suttas in a mula book"""
+        cursor = self.main_db.cursor()
+        
+        # Get all suttas in this book
+        cursor.execute("""
+        SELECT name, page_number 
+        FROM suttas 
+        WHERE book_id = ?
+        ORDER BY page_number
+        """, (mula_book_id,))
+        
+        suttas = cursor.fetchall()
+        
+        for sutta_name, start_page in suttas:
+            print(f"\n🎯 Processing {sutta_name}...")
+            self.translate_complete_sutta(sutta_name, mula_book_id, start_page, None, commentary_book_id)
     
+    def translate_entire_digha(self):
+        """Translate all 34 Dīgha Nikāya suttas"""
+        print("🚀 TRANSLATING ENTIRE DĪGHA NIKĀYA")
+        
+        # DN1-13
+        self.translate_entire_book("mula_di_01", "attha_di_01")
+        # DN14-23  
+        self.translate_entire_book("mula_di_02", "attha_di_02")
+        # DN24-34
+        self.translate_entire_book("mula_di_03", "attha_di_03")        
     def find_sutta_paragraph_range(self, book_id, start_page):
         """Find paragraph range for a sutta starting at given page"""
         cursor = self.main_db.cursor()
@@ -535,6 +562,47 @@ class SuttaTranslator:
         
         print(f"✅ Generated {filename}")
     
+    def translate_sutta_by_number(self, dn_number):
+        """Translate sutta by DN number (e.g., DN3, DN15)"""
+        cursor = self.main_db.cursor()
+        
+        # Map DN numbers to book ranges
+        dn_ranges = {
+            (1, 13): ("mula_di_01", "attha_di_01"),
+            (14, 23): ("mula_di_02", "attha_di_02"), 
+            (24, 34): ("mula_di_03", "attha_di_03")
+        }
+        
+        # Find which book this DN number belongs to
+        mula_book = None
+        commentary_book = None
+        for (start, end), (mula, commentary) in dn_ranges.items():
+            if start <= dn_number <= end:
+                mula_book, commentary_book = mula, commentary
+                break
+        
+        if not mula_book:
+            print(f"❌ DN{dn_number} not found in valid range (1-34)")
+            return
+        
+        # Get sutta info for this DN number
+        cursor.execute("""
+        SELECT name, page_number 
+        FROM suttas 
+        WHERE book_id = ?
+        ORDER BY page_number
+        LIMIT 1 OFFSET ?
+        """, (mula_book, dn_number - (1 if dn_number <= 13 else 14 if dn_number <= 23 else 24)))
+        
+        sutta_info = cursor.fetchone()
+        
+        if sutta_info:
+            sutta_name, start_page = sutta_info
+            print(f"🎯 Translating DN{dn_number}: {sutta_name}")
+            self.translate_complete_sutta(sutta_name, mula_book, start_page, None, commentary_book)
+        else:
+            print(f"❌ DN{dn_number} not found in database")
+    
     def check_translation_status(self, sutta_name=None):
         """Check status of translations"""
         print("📊 TRANSLATION STATUS CHECK")
@@ -579,7 +647,118 @@ class SuttaTranslator:
             if total > 0:
                 print(f"  Success Rate: {success/total*100:.1f}%")
 
-# Usage examples
+    def debug_sutta_range(self, sutta_name):
+        """Debug paragraph range for a sutta"""
+        cursor = self.main_db.cursor()
+        
+        # Find the sutta
+        cursor.execute("""
+        SELECT book_id, page_number FROM suttas 
+        WHERE name LIKE ? LIMIT 1
+        """, (f'%{sutta_name}%',))
+        
+        sutta_info = cursor.fetchone()
+        if not sutta_info:
+            print(f"❌ Sutta '{sutta_name}' not found")
+            return
+            
+        book_id, start_page = sutta_info
+        print(f"📍 {sutta_name}: {book_id} starting at page {start_page}")
+        
+        # Check what paragraphs exist at this page
+        cursor.execute("""
+        SELECT p.paragraph_number, p.page_number, substr(pa.content, 1, 100)
+        FROM paragraphs p
+        JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+        WHERE p.book_id = ? AND p.page_number >= ?
+        ORDER BY p.paragraph_number
+        LIMIT 10
+        """, (book_id, start_page))
+        
+        paragraphs = cursor.fetchall()
+        print(f"📖 First 10 paragraphs at page {start_page}:")
+        for para_num, page_num, content in paragraphs:
+            print(f"   Para {para_num} (Page {page_num}): {content}...")
+            
+    def check_paragraph_sequence(self, book_id):
+        """Check paragraph numbers to find sutta boundaries"""
+        cursor = self.main_db.cursor()
+        
+        cursor.execute("""
+        SELECT p.paragraph_number, p.page_number, substr(pa.content, 1, 150)
+        FROM paragraphs p
+        JOIN pages pa ON p.book_id = pa.bookid AND p.page_number = pa.page
+        WHERE p.book_id = ?
+        AND p.paragraph_number BETWEEN 190 AND 250
+        ORDER BY p.paragraph_number
+        """, (book_id,))
+        
+        paragraphs = cursor.fetchall()
+        
+        print(f"📖 Paragraphs in {book_id} after DN2:")
+        for para_num, page_num, content in paragraphs:
+            # Look for sutta markers
+            sutta_marker = ""
+            if 'suttaṃ' in content.lower():
+                sutta_marker = " 🚨 SUTTA"
+            print(f"   Para {para_num} (Page {page_num}): {content[:80]}...{sutta_marker}")
+  
+    def map_sutta_ranges(self, mula_book_id):
+        """Find exact paragraph ranges for all suttas in a book"""
+        cursor = self.main_db.cursor()
+        
+        # Get all suttas in this book with their start pages
+        cursor.execute("""
+        SELECT name, page_number 
+        FROM suttas 
+        WHERE book_id = ?
+        ORDER BY page_number
+        """, (mula_book_id,))
+        
+        suttas = cursor.fetchall()
+        
+        ranges = []
+        for i, (sutta_name, start_page) in enumerate(suttas):
+            # Find start paragraph for this sutta
+            cursor.execute("""
+            SELECT MIN(paragraph_number)
+            FROM paragraphs 
+            WHERE book_id = ? AND page_number >= ?
+            """, (mula_book_id, start_page))
+            
+            start_para = cursor.fetchone()[0]
+            
+            # Find end paragraph (start of next sutta or end of book)
+            if i < len(suttas) - 1:
+                next_start_page = suttas[i+1][1]
+                cursor.execute("""
+                SELECT MIN(paragraph_number) - 1
+                FROM paragraphs 
+                WHERE book_id = ? AND page_number >= ?
+                """, (mula_book_id, next_start_page))
+                end_para = cursor.fetchone()[0]
+            else:
+                # Last sutta in book - go to max paragraph
+                cursor.execute("""
+                SELECT MAX(paragraph_number)
+                FROM paragraphs 
+                WHERE book_id = ?
+                """, (mula_book_id,))
+                end_para = cursor.fetchone()[0]
+            
+            ranges.append((sutta_name, start_para, end_para))
+            print(f"📖 {sutta_name}: paragraphs {start_para}-{end_para}")
+        
+        return ranges
+    
+    def translate_book_by_ranges(self, mula_book_id, commentary_book_id):
+        """Translate entire book using auto-mapped paragraph ranges"""
+        print(f"🗺️  Mapping sutta ranges for {mula_book_id}...")
+        ranges = self.map_sutta_ranges(mula_book_id)
+        
+        print(f"🚀 Translating {len(ranges)} suttas in {mula_book_id}...")
+        for sutta_name, start_para, end_para in ranges:
+            self.translate_complete_sutta(sutta_name, mula_book_id, start_para, end_para, commentary_book_id)
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',
@@ -587,11 +766,28 @@ if __name__ == "__main__":
     )
     
     # Example: Translate DN1 Brahmajāla
-    translator.translate_complete_sutta("Brahmajāla")
+    # ~ translator.translate_complete_sutta("Brahmajāla")
     
-    # Example: Translate with explicit parameters
-    # translator.translate_complete_sutta("DN1", "mula_di_01", 1, 149, "attha_di_01")
+    # ~ # Example: Translate with explicit parameters
+    # ~ # translator.translate_complete_sutta("DN1", "mula_di_01", 1, 149, "attha_di_01")
     
-    # Check status and resume if needed
-    translator.check_translation_status()
-    # translator.resume_failed_translations()
+    # ~ # Check status and resume if needed
+    # ~ translator.check_translation_status()
+    # ~ # translator.resume_failed_translations()
+    
+    # ~ # Translate ALL Dīgha suttas automatically
+    # ~ translator.translate_entire_digha()
+    
+    # ~ # Or just one book
+    # ~ translator.translate_entire_book("mula_di_01", "attha_di_01")
+    
+    
+    # Translate by DN number
+    # ~ translator.translate_sutta_by_number(3)   # DN3 Ambatṭha
+    # ~ translator.translate_sutta_by_number(15)  # DN15 Mahānidāna
+    # ~ translator.translate_sutta_by_number(1)   # DN1 Brahmajāla (will skip)
+    # ~ translator.debug_sutta_range("ambatṭha")
+    # ~ translator.check_paragraph_sequence("mula_di_01")
+    translator.translate_book_by_ranges("mula_di_01", "attha_di_01")
+    
+  

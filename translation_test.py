@@ -2228,21 +2228,9 @@ class SuttaTranslator:
         return paragraphs
   
     def generate_final_sutta_html(self, book_id):
-        """Generate final HTML with actual translations"""
+        """Generate clean HTML with proper paragraph-to-translation mapping"""
         
-        cursor = self.translation_db.cursor()
-        
-        # Get all translation chunks in order
-        cursor.execute("""
-            SELECT original_content, translated_content 
-            FROM translations 
-            WHERE original_book_id = ? AND content_type = 'mula'
-            ORDER BY original_paragraph
-        """, (book_id,))
-        
-        all_chunks = cursor.fetchall()
-        
-        # Get actual paragraph structure from main database
+        # Get all paragraphs from main database
         main_cursor = self.main_db.cursor()
         main_cursor.execute("""
             SELECT p.paragraph_number, pa.content
@@ -2254,17 +2242,21 @@ class SuttaTranslator:
         
         original_paragraphs = main_cursor.fetchall()
         
-        # Combine all translation content into one big text
-        full_translation = " ".join([chunk[1] for chunk in all_chunks])
+        # Get all translations
+        trans_cursor = self.translation_db.cursor()
+        trans_cursor.execute("""
+            SELECT original_content, translated_content 
+            FROM translations 
+            WHERE original_book_id = ? AND content_type = 'mula'
+            ORDER BY original_paragraph
+        """, (book_id,))
         
-        # Create paragraphs with original Pali and actual translations
-        paragraphs = []
-        for i, (para_num, pali_text) in enumerate(original_paragraphs, 1):
-            # For now, just show the combined translation text
-            # We'll need to map paragraphs to translations properly later
-            paragraphs.append((i, pali_text, full_translation))
+        translation_chunks = trans_cursor.fetchall()
         
-        # Generate final HTML
+        # Combine all translation content
+        full_translation = " ".join([chunk[1] for chunk in translation_chunks])
+        
+        # Simple approach: Use original Pali paragraphs and show full translation at the bottom
         filename = "mula_di_01.html"
         
         html_content = f"""
@@ -2272,96 +2264,102 @@ class SuttaTranslator:
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>Dīgha Nikāya 1 - Complete Translation</title>
+            <title>Dīgha Nikāya 1 - Mūla Text</title>
             <style>
                 body {{ 
                     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; 
                     margin: 0; 
                     padding: 20px;
                     background: #f8f9fa;
+                    line-height: 1.6;
                 }}
                 .container {{
-                    max-width: 900px;
+                    max-width: 800px;
                     margin: 0 auto;
                     background: white;
-                    padding: 40px;
+                    padding: 30px;
                     border-radius: 10px;
                     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
                 }}
                 .header {{
                     text-align: center;
-                    margin-bottom: 40px;
+                    margin-bottom: 30px;
                     border-bottom: 2px solid #e9ecef;
                     padding-bottom: 20px;
                 }}
                 .sutta-title {{
-                    font-size: 2.2em;
+                    font-size: 2em;
                     color: #2c5530;
                     margin: 0;
-                    font-weight: 300;
+                }}
+                .section {{
+                    margin: 30px 0;
+                }}
+                .section-title {{
+                    color: #2c5530;
+                    border-bottom: 1px solid #e9ecef;
+                    padding-bottom: 10px;
+                    margin-bottom: 15px;
                 }}
                 .para {{
-                    margin: 25px 0;
-                    border-left: 3px solid transparent;
-                    padding-left: 20px;
+                    margin: 15px 0;
+                    padding: 10px;
+                    border-left: 3px solid #e9ecef;
                 }}
                 .para-number {{
                     font-weight: bold;
                     color: #2c5530;
-                    margin-right: 12px;
+                    margin-right: 8px;
                 }}
                 .pali {{
                     font-family: "Noto Sans", Arial, sans-serif;
-                    font-size: 1.1em;
-                    color: #1a1a1a;
-                    line-height: 1.7;
+                    color: #333;
                 }}
-                .trans {{
-                    color: #555;
-                    line-height: 1.6;
-                    padding-left: 20px;
-                    margin-top: 8px;
-                    font-style: italic;
-                }}
-                .note {{
-                    background: #fff3cd;
-                    padding: 15px;
+                .translation {{
+                    background: #f8f9fa;
+                    padding: 20px;
                     border-radius: 5px;
-                    margin: 20px 0;
-                    border-left: 4px solid #ffc107;
+                    margin-top: 20px;
+                    white-space: pre-wrap;
+                    font-size: 0.95em;
+                    line-height: 1.5;
                 }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1 class="sutta-title">Dīgha Nikāya 1</h1>
-                    <div>Original Pali Text with Complete Translation</div>
+                    <h1 class="sutta-title">Dīgha Nikāya 1 - Mūla Text</h1>
+                    <div>Pali Text with Complete English Translation</div>
                 </div>
                 
-                <div class="note">
-                    <strong>Note:</strong> Paragraph numbering is now sequential (1, 2, 3...). 
-                    The translation text below shows the combined content from all translated chunks.
-                </div>
-                
-                <div class="content">
+                <div class="section">
+                    <h2 class="section-title">Pali Text ({len(original_paragraphs)} paragraphs)</h2>
         """
         
-        # Show first 20 paragraphs as sample
-        for para_num, pali_text, trans_text in paragraphs[:20]:
+        # Show first 50 Pali paragraphs as sample
+        for para_num, content in original_paragraphs[:50]:
+            clean_content = re.sub(r'<[^>]+>', '', content)
             html_content += f"""
                     <div class="para">
-                        <div class="pali">
-                            <span class="para-number">{para_num}.</span>
-                            {pali_text}
-                        </div>
-                        <div class="trans">
-                            {trans_text[:500]}... [full translation continues]
-                        </div>
+                        <span class="para-number">{para_num}.</span>
+                        <span class="pali">{clean_content}</span>
                     </div>
             """
         
-        html_content += """
+        if len(original_paragraphs) > 50:
+            html_content += f"""
+                    <div style="text-align: center; color: #666; margin: 20px 0;">
+                        ... and {len(original_paragraphs) - 50} more paragraphs
+                    </div>
+            """
+        
+        html_content += f"""
+                </div>
+                
+                <div class="section">
+                    <h2 class="section-title">Complete English Translation</h2>
+                    <div class="translation">{full_translation}</div>
                 </div>
             </div>
         </body>
@@ -2371,10 +2369,9 @@ class SuttaTranslator:
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
-        print(f"📄 HTML generated: {filename}")
-        print(f"📊 Showing first 20 of {len(paragraphs)} paragraphs")
+        print(f"✅ Clean HTML generated: {filename}")
+        print(f"📊 {len(original_paragraphs)} Pali paragraphs + Complete translation")
         return filename
-    
 if __name__ == "__main__":
     translator = SuttaTranslator(
         '~/.local/share/com.paauk.tipitaka_pali_reader/tipitaka_pali.db',

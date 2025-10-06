@@ -195,14 +195,14 @@ def process_vagga_files(sutta_prefix, output_prefix):
     with open(f"{output_prefix}_translation_pairs.json", 'w', encoding='utf-8') as f:
         json.dump(translation_pairs, f, ensure_ascii=False, indent=2)
     
-    print(f"\nDN2 Vagga processing complete!")
+    print(f"\n{output_prefix} processing complete!")
     print(f"Total translation pairs: {len(translation_pairs)}")
     print(f"Output files: {output_prefix}_*.json")
     
 def main():
     """Process DN2 vagga (s02 series)"""
-    sutta_prefix = "s0102"  # DN2 vagga (DN14-DN23)
-    output_prefix = "dn2_vagga"  # Separate from DN1 files
+    sutta_prefix = "s0103"  # DN2 vagga (DN14-DN23)
+    output_prefix = "dn3_vagga"  # Separate from DN1 files
     
     process_vagga_files(sutta_prefix, output_prefix)
 

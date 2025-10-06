@@ -47,9 +47,9 @@ class ImprovedTipitakaTranslator:
         
         # Check both fields for any error indicators
         mula_has_error = any(marker in existing.get('mula_english', '') 
-                            for marker in ['[API Error', '[Error', '[Connection Error', '[Failed'])
+                            for marker in ['[API Error', '[API Error: 502]', '[Error', '[Connection Error', '[Failed'])
         commentary_has_error = any(marker in existing.get('commentary_english', '') 
-                                  for marker in ['[API Error', '[Error', '[Connection Error', '[Failed'])
+                                  for marker in ['[API Error', '[API Error: 502]', '[Error', '[Connection Error', '[Failed'])
         
         return mula_has_error or commentary_has_error
     

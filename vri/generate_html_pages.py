@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Generate multi-page HTML system from translated_texts.json
 Generic for DN/MN/SN/AN nikāyas
@@ -16,14 +17,35 @@ def load_translations():
 
 def extract_sutta_info(sutta_name):
     """Extract sutta number and clean name"""
+    # ~ print(f"DEBUG: Processing sutta name: '{sutta_name}'")  # Add this line
+    
     match = re.match(r'(\d+)\.\s+(.+)', sutta_name)
     if match:
         return match.group(1), match.group(2)
+    
+    # If no match, try other patterns
+    match = re.match(r'(\w+)\s+(\d+)\.?\s*(.+)', sutta_name)
+    if match:
+        return match.group(2), match.group(3)
+    
+    # If still no match, return the whole name
     return None, sutta_name
-
+def get_actual_dn_number(vagga_num):
+    """Convert vagga number to actual DN number"""
+    # First vagga: DN 1-13, Second vagga: DN 14-23, etc.
+    dn_mapping = {
+        '1': '14', '2': '15', '3': '16', '4': '17', '5': '18', '6': '19',
+        '7': '20', '8': '21', '9': '22', '10': '23', '11': '24', '12': '25',
+        '13': '26', '14': '27', '15': '28', '16': '29', '17': '30', '18': '31',
+        '19': '32', '20': '33', '21': '34'
+    }
+    return dn_mapping.get(vagga_num, vagga_num)
+    
 def detect_nikaya(suttas):
     """Detect which nikāya this is based on sutta names"""
     first_sutta = next(iter(suttas.keys()))
+    # ~ print(f"DEBUG: First sutta: '{first_sutta}'")  # Add this to see what we're checking
+    
     if 'Brahmajālasutta' in first_sutta:
         return 'dn', 'Dīgha Nikāya'
     elif 'Mūlapariyāyasutta' in first_sutta:
@@ -33,8 +55,12 @@ def detect_nikaya(suttas):
     elif 'Cittapariyādānasutta' in first_sutta:
         return 'an', 'Aṅguttara Nikāya'
     else:
-        return 'unknown', 'Tipiṭaka'
-
+        # Try to detect from sutta numbers or patterns
+        if any('Mahā' in name for name in suttas.keys()):
+            return 'dn', 'Dīgha Nikāya'  # Long suttas with "Mahā" prefix are usually DN
+        else:
+            return 'dn', 'Dīgha Nikāya'  # Default to DN since you have Mahā suttas
+            
 def group_by_sutta(translations):
     """Group paragraphs by sutta"""
     suttas = {}
@@ -60,16 +86,31 @@ def get_sutta_filename(sutta_name, nikaya_code):
     return f"suttas/{nikaya_code}{sutta_num}_{clean_filename.lower()}.html"
 
 def escape_html(text):
-    """Escape HTML special characters"""
+    """Escape HTML special characters but preserve formatting"""
     if not text:
         return ""
-    return (text.replace('&', '&amp;')
+    
+    # First escape all HTML
+    text = (text.replace('&', '&amp;')
                 .replace('<', '&lt;')
                 .replace('>', '&gt;')
                 .replace('"', '&quot;')
-                .replace("'", '&#039;')
-                .replace('\n', '<br>'))
-                # ~ .replace('\n', ''))
+                .replace("'", '&#039;'))
+    
+    # Then unescape allowed HTML tags
+    allowed_tags = ['i', 'b', 'em', 'strong', 'br', 'p']
+    for tag in allowed_tags:
+        text = text.replace(f'&lt;{tag}&gt;', f'<{tag}>')
+        text = text.replace(f'&lt;/{tag}&gt;', f'</{tag}>')
+    
+    # Convert XML <p> tags to HTML paragraph breaks
+    text = re.sub(r'&lt;p[^&]*&gt;', '<br><br>', text)
+    text = text.replace('&lt;/p&gt;', '')
+    
+    # Convert Markdown * to HTML <i>
+    text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+    
+    return text.replace('\n', '<br>')
 
 def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_name):
     """Generate individual sutta HTML page"""
@@ -127,7 +168,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
         .container {{
             max-width: 1000px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 1px;
         }}
 
         .sutta-header {{
@@ -220,6 +261,13 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
         .dark-mode .paragraph-number {{
             color: #aaa;
         }}
+        
+        @font-face {{
+            font-family: 'Tiro Devanagari Hindi';
+            src: url('../../assets/fonts/TiroDevanagariHindi-Regular.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }}
 
         .pali-text {{
             font-size: 1.3em;
@@ -227,7 +275,14 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             color: #2c3e50;
             font-weight: bold;
             line-height: 1.8;
+            font-family: 'Times New Roman', 'Gentium Plus', serif; /* Roman font */
+
         }}
+        
+        .devanagari-script .pali-text {{
+            font-family: 'Tiro Devanagari Hindi', sans-serif; /* Devanagari font */
+        }}
+
 
         .dark-mode .pali-text {{
             color: #f0f0f0;
@@ -267,6 +322,11 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             color: #2c3e50;
             font-style: italic;
             line-height: 1.8;
+            font-family: 'Times New Roman', 'Gentium Plus', serif; /* Roman font */
+        }}
+        
+        .devanagari-script .commentary-pali {{
+            font-family: 'Tiro Devanagari Hindi', 'Noto Sans Devanagari', sans-serif; /* Devanagari font */
         }}
 
         .dark-mode .commentary-pali {{
@@ -429,7 +489,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
     </div>
 
     <script>
-                let currentView = {{
+        let currentView = {{
             mula_pali: true,
             mula_english: true,
             commentary_pali: false,
@@ -440,7 +500,9 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             currentView[type] = !currentView[type];
             const buttons = document.querySelectorAll('.btn.toggle');
             buttons.forEach(btn => {{
-                if (btn.textContent.toLowerCase().includes(type.replace('_', ' '))) {{
+                let btnText = btn.textContent.toLowerCase();
+                if ((type === 'mula_english' && btnText.includes('translation')) ||
+                    btnText.includes(type.replace('_', ' '))) {{
                     btn.classList.toggle('active', currentView[type]);
                 }}
             }});
@@ -459,6 +521,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             currentView.devanagari = !currentView.devanagari;
             const btn = event.target;
             btn.classList.toggle('active', currentView.devanagari);
+            document.body.classList.toggle('devanagari-script', currentView.devanagari);
             updateDisplay();
         }}
 
@@ -467,7 +530,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
         }}
 
-        function convertToDevanagari(text) {{
+                function convertToDevanagari(text) {{
             if (!text) return text;
             
             text = text.toLowerCase();
@@ -548,7 +611,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
                         }} 
                         // If followed by another consonant or punctuation, no inherent 'a'
                         else if (consonants[nextChar] || ' ,.?!–-'.includes(nextChar)) {{
-                            result += consonantFound;
+                            result += consonantFound + '्'; // Add virama for doubled consonants
                             i += consonantLength;
                         }}
                         // Otherwise, assume inherent 'a'
@@ -579,6 +642,24 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             return result;
         }}
 
+
+        function convertToDevanagariPreservingHTML(text) {{
+            // Split text into HTML tags and content
+            const parts = text.split(/(<[^>]*>)/);
+            
+            let result = '';
+            for (let part of parts) {{
+                if (part.startsWith('<') && part.endsWith('>')) {{
+                    // This is an HTML tag, keep it as-is
+                    result += part;
+                }} else {{
+                    // This is text content, convert to Devanagari
+                    result += convertToDevanagari(part);
+                }}
+            }}
+            
+            return result;
+        }}
         function updateDisplay() {{
             // Handle view toggles
             document.querySelectorAll('.mula-pali-section').forEach(section => {{
@@ -593,13 +674,11 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             document.querySelectorAll('.commentary-english-section').forEach(section => {{
                 section.style.display = currentView.commentary_english ? 'block' : 'none';
             }});
-
             // Handle Devanagari conversion
             document.querySelectorAll('.pali-text').forEach(element => {{
                 const originalText = element.getAttribute('data-pali');
                 if (currentView.devanagari) {{
-                    const textOnly = originalText.replace(/<[^>]*>/g, ' ');
-                    element.innerHTML = convertToDevanagari(textOnly);
+                    element.innerHTML = convertToDevanagariPreservingHTML(originalText);
                 }} else {{
                     element.innerHTML = originalText;
                 }}
@@ -607,18 +686,25 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             document.querySelectorAll('.commentary-pali').forEach(element => {{
                 const originalText = element.getAttribute('data-pali');
                 if (currentView.devanagari) {{
-                    const textOnly = originalText.replace(/<[^>]*>/g, ' ');
-                    element.innerHTML = convertToDevanagari(textOnly);
+                    element.innerHTML = convertToDevanagariPreservingHTML(originalText);
                 }} else {{
                     element.innerHTML = originalText;
                 }}
             }});
         }}
+        
+        
 
         // Load saved settings
         if (localStorage.getItem('darkMode') === 'true') {{
             document.body.classList.add('dark-mode');
         }}
+        
+         // Set initial script state
+        document.body.classList.toggle('devanagari-script', currentView.devanagari);
+
+        // Initial display update
+        updateDisplay();
         
         const savedCommentary = localStorage.getItem('showCommentary');
         if (savedCommentary !== null) {{
@@ -635,6 +721,32 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
 
         // Initial display update
         updateDisplay();
+        
+                // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {{
+            if (event.ctrlKey) {{
+                if (event.key === 'ArrowRight') {{
+                    // Next paragraph
+                    const paragraphs = document.querySelectorAll('.paragraph');
+                    const current = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+                    let currentIndex = Array.from(paragraphs).findIndex(p => p.contains(current));
+                    if (currentIndex < paragraphs.length - 1) {{
+                        paragraphs[currentIndex + 1].scrollIntoView({{ behavior: 'smooth' }});
+                    }}
+                    event.preventDefault();
+                }} else if (event.key === 'ArrowLeft') {{
+                    // Previous paragraph  
+                    const paragraphs = document.querySelectorAll('.paragraph');
+                    const current = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+                    let currentIndex = Array.from(paragraphs).findIndex(p => p.contains(current));
+                    if (currentIndex > 0) {{
+                        paragraphs[currentIndex - 1].scrollIntoView({{ behavior: 'smooth' }});
+                    }}
+                    event.preventDefault();
+                }}
+            }}
+        }});
+        
     </script>
 </body>
 </html>
@@ -677,6 +789,8 @@ def generate_index_html(suttas, nikaya_code, nikaya_name):
         .container {{
             max-width: 800px;
             margin: 0 auto;
+            padding: 10px;  /* Reduced from 20px */
+
         }}
 
         .header {{
@@ -763,9 +877,15 @@ def generate_index_html(suttas, nikaya_code, nikaya_name):
         # Count paragraphs with commentary
         with_commentary = sum(1 for p in paragraphs if p['has_commentary'])
         
+        # For DN, use actual DN numbers instead of vagga numbers
+        if nikaya_code == 'dn' and sutta_num:
+            actual_num = get_actual_dn_number(sutta_num)
+        else:
+            actual_num = sutta_num
+            
         html += f'''
             <a href="{filename}" class="sutta-item">
-                <div class="sutta-number">{nikaya_code.upper()} {sutta_num}</div>
+                <div class="sutta-number">{nikaya_code.upper()} {actual_num if actual_num else "?"}</div>
                 <div class="sutta-name">{clean_name}</div>
                 <div class="sutta-stats">{len(paragraphs)} paragraphs • {with_commentary} with commentary</div>
             </a>

@@ -69,6 +69,7 @@ def escape_html(text):
                 .replace('"', '&quot;')
                 .replace("'", '&#039;')
                 .replace('\n', '<br>'))
+                # ~ .replace('\n', ''))
 
 def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_name):
     """Generate individual sutta HTML page"""
@@ -86,7 +87,9 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{sutta_name} - Tipiṭaka Translations</title>
-    <style>
+        <style>
+         @import url('https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
         /* Base styles */
         :root {{
             --primary-color: #2c3e50;
@@ -103,7 +106,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
         .dark-mode {{
             --bg-color: #1a1a1a;
             --card-bg: #2d2d2d;
-            --text-color: #e0e0e0;
+            --text-color: #f0f0f0;
             --shadow: 0 4px 6px rgba(0,0,0,0.3);
         }}
 
@@ -114,10 +117,10 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
         }}
 
         body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Times New Roman', serif;
             background: var(--bg-color);
             color: var(--text-color);
-            line-height: 1.6;
+            line-height: 1.8;
             transition: all 0.3s ease;
         }}
 
@@ -140,11 +143,20 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             font-size: 2em;
             color: var(--primary-color);
             margin-bottom: 10px;
+            font-weight: bold;
+        }}
+
+        .dark-mode .sutta-title {{
+            color: #f0f0f0;
         }}
 
         .sutta-subtitle {{
             color: #7f8c8d;
             font-size: 1.1em;
+        }}
+
+        .dark-mode .sutta-subtitle {{
+            color: #95a5a6;
         }}
 
         .navigation {{
@@ -164,6 +176,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             text-decoration: none;
             border-radius: 4px;
             transition: all 0.3s ease;
+            font-weight: bold;
         }}
 
         .nav-btn:hover {{
@@ -176,90 +189,100 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             cursor: not-allowed;
         }}
 
+        .dark-mode .nav-btn.disabled {{
+            background: #555;
+        }}
+
         .home-btn {{
             background: var(--accent-color);
         }}
 
         .paragraph {{
+            position: relative;
             background: var(--card-bg);
             border-radius: var(--border-radius);
-            padding: 25px;
-            margin-bottom: 25px;
+            padding: 20px 20px 20px 50px;  /* Reduced padding */
+            margin-bottom: 15px;
             box-shadow: var(--shadow);
             transition: all 0.3s ease;
+            border-left: 3px solid var(--primary-color);
         }}
 
-        .paragraph-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid var(--secondary-color);
+        .paragraph-number {{
+            position: absolute;
+            left: 15px;
+            top: 25px;
+            color: #666;
+            font-size: 0.9em;
+            font-weight: normal;
         }}
 
-        .para-number {{
-            background: var(--primary-color);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 1.1em;
-        }}
-
-        .section {{
-            margin: 25px 0;
-        }}
-
-        .section-title {{
-            font-size: 1.1em;
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: var(--primary-color);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }}
-
-        .section-title::before {{
-            content: "•";
-            color: var(--accent-color);
-            font-size: 1.5em;
-        }}
-
-        .text-content {{
-            background: var(--bg-color);
-            padding: 20px;
-            border-radius: 6px;
-            border-left: 4px solid var(--accent-color);
-            margin: 10px 0;
-            transition: all 0.3s ease;
+        .dark-mode .paragraph-number {{
+            color: #aaa;
         }}
 
         .pali-text {{
-            border-left-color: #e74c3c;
-            font-size: 1.2em;
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            font-weight: bold;
             line-height: 1.8;
         }}
 
-        .english-text {{
-            border-left-color: #3498db;
+        .dark-mode .pali-text {{
+            color: #f0f0f0;
+        }}
+
+        .translation-text {{
+            font-size: 1.25em;
+            margin-bottom: 20px;
+            color: #222;
+            line-height: 1.2;
+            font-family: 'Gentium Plus','Heuristica',  'Georgia', serif;
+            font-weight: normal;
+        }}
+        
+        
+
+        .dark-mode .translation-text {{
+            color: #e8e8e8;
         }}
 
         .commentary-section {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
+            background: #f5f5f5;
+            padding: 10px;
+            margin-top: 20px;
             border-radius: 6px;
-            margin: 15px 0;
+            border-left: 3px solid #7f8c8d;
         }}
 
-        .commentary-section .section-title {{
-            color: white;
+        .dark-mode .commentary-section {{
+            background: #3a3a3a;
+            border-left-color: #95a5a6;
         }}
 
-        .commentary-section .section-title::before {{
-            color: #f1c40f;
+        .commentary-pali {{
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            color: #2c3e50;
+            font-style: italic;
+            line-height: 1.8;
+        }}
+
+        .dark-mode .commentary-pali {{
+            color: #f0f0f0;
+        }}
+
+        .commentary-english {{
+            font-size: 1.1em;
+            color: #333;
+            line-height: 1.6;
+            font-family: 'Gentium Plus', 'Heuristica', 'Georgia', serif;
+            font-weight: normal;
+        }}
+
+        .dark-mode .commentary-english {{
+            color: #e0e0e0;
         }}
 
         .controls {{
@@ -274,10 +297,11 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             padding: 8px 16px;
             border: none;
             border-radius: 4px;
-            background: var(--secondary-color);
+            background: #95a5a6;
             color: white;
             cursor: pointer;
             transition: all 0.3s ease;
+            font-weight: bold;
         }}
 
         .btn:hover {{
@@ -290,12 +314,7 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
         }}
 
         .btn.toggle {{
-            background: #95a5a6;
             position: relative;
-        }}
-
-        .btn.toggle.active {{
-            background: var(--success-color);
         }}
 
         .btn.toggle::after {{
@@ -330,6 +349,24 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
                 gap: 10px;
                 text-align: center;
             }}
+            
+            .paragraph {{
+                padding: 20px 20px 20px 45px;
+            }}
+            
+            .paragraph-number {{
+                left: 12px;
+                top: 20px;
+            }}
+            
+            .controls {{
+                gap: 5px;
+            }}
+            
+            .btn {{
+                padding: 6px 12px;
+                font-size: 0.9em;
+            }}
         }}
     </style>
 </head>
@@ -347,11 +384,11 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
         </div>
 
         <div class="controls">
-            <button class="btn toggle active" onclick="toggleView('mula_pali')">Mula Pali</button>
-            <button class="btn toggle active" onclick="toggleView('mula_english')">Mula English</button>
-            <button class="btn toggle active" onclick="toggleView('commentary_pali')">Commentary Pali</button>
-            <button class="btn toggle active" onclick="toggleView('commentary_english')">Commentary English</button>
-            <button class="btn toggle" onclick="toggleScript()">Devanagari Script</button>
+            <button class="btn toggle active" onclick="toggleView('mula_pali')">Pali Text</button>
+            <button class="btn toggle active" onclick="toggleView('mula_english')">Translation</button>
+            <button class="btn toggle" onclick="toggleView('commentary_pali')">Commentary Pali</button>
+            <button class="btn toggle" onclick="toggleView('commentary_english')">Commentary English</button>
+            <button class="btn toggle active" onclick="toggleScript()">Devanagari Script</button>
             <button class="btn" onclick="toggleTheme()">Dark/Light</button>
         </div>
 
@@ -364,44 +401,21 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
         
         html += f'''
             <div class="paragraph">
-                <div class="paragraph-header">
-                    <div class="para-number">Paragraph {item['paragraph_number']}</div>
-                </div>
-
-                <div class="section mula-pali-section">
-                    <div class="section-title">Mūla (Source Text)</div>
-                    <div class="text-content pali-text" data-pali="{escape_html(item['mula_pali'])}">{escape_html(item['mula_pali'])}</div>
-                </div>
-
-                <div class="section mula-english-section">
-                    <div class="section-title">English Translation</div>
-                    <div class="text-content english-text">{escape_html(item['mula_english'])}</div>
-                </div>
-'''
+                <div class="paragraph-number">{item['paragraph_number']}</div>
+                
+                <div class="pali-text mula-pali-section" data-pali="{escape_html(item['mula_pali'])}">{escape_html(item['mula_pali'])}</div>
+                
+                <div class="translation-text mula-english-section">{escape_html(item['mula_english'])}</div>
+        '''
 
         if has_commentary:
             html += f'''
                 <div class="commentary-section">
-                    <div class="section-title">Aṭṭhakathā (Commentary)</div>
-                    
-                    <div class="section commentary-pali-section">
-                        <div class="section-title">Pali Commentary</div>
-                        <div class="text-content pali-text" data-pali="{escape_html(item['commentary_pali'])}">{escape_html(item['commentary_pali'])}</div>
-                    </div>
-
-                    <div class="section commentary-english-section">
-                        <div class="section-title">English Commentary</div>
-                        <div class="text-content english-text">{escape_html(item['commentary_english'])}</div>
-                    </div>
+                    <div class="commentary-pali commentary-pali-section" data-pali="{escape_html(item['commentary_pali'])}">{escape_html(item['commentary_pali'])}</div>
+                    <div class="commentary-english commentary-english-section">{escape_html(item['commentary_english'])}</div>
                 </div>
             '''
-        else:
-            html += '''
-                <div style="text-align: center; color: #7f8c8d; font-style: italic; padding: 10px;">
-                    No commentary available for this paragraph
-                </div>
-            '''
-
+        
         html += '</div>'
 
     html += f'''
@@ -415,14 +429,13 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
     </div>
 
     <script>
-        let currentView = {{
+                let currentView = {{
             mula_pali: true,
             mula_english: true,
-            commentary_pali: true,
-            commentary_english: true,
-            devanagari: false
+            commentary_pali: false,
+            commentary_english: false,
+            devanagari: true
         }};
-
         function toggleView(type) {{
             currentView[type] = !currentView[type];
             const buttons = document.querySelectorAll('.btn.toggle');
@@ -432,6 +445,14 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
                 }}
             }});
             updateDisplay();
+        }}
+
+        function toggleCommentary() {{
+            currentView.show_commentary = !currentView.show_commentary;
+            const btn = event.target;
+            btn.classList.toggle('active', currentView.show_commentary);
+            document.body.classList.toggle('show-commentary', currentView.show_commentary);
+            localStorage.setItem('showCommentary', currentView.show_commentary);
         }}
 
         function toggleScript() {{
@@ -583,11 +604,33 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
                     element.innerHTML = originalText;
                 }}
             }});
+            document.querySelectorAll('.commentary-pali').forEach(element => {{
+                const originalText = element.getAttribute('data-pali');
+                if (currentView.devanagari) {{
+                    const textOnly = originalText.replace(/<[^>]*>/g, ' ');
+                    element.innerHTML = convertToDevanagari(textOnly);
+                }} else {{
+                    element.innerHTML = originalText;
+                }}
+            }});
         }}
 
-        // Load saved theme
+        // Load saved settings
         if (localStorage.getItem('darkMode') === 'true') {{
             document.body.classList.add('dark-mode');
+        }}
+        
+        const savedCommentary = localStorage.getItem('showCommentary');
+        if (savedCommentary !== null) {{
+            currentView.show_commentary = savedCommentary === 'true';
+            document.body.classList.toggle('show-commentary', currentView.show_commentary);
+            // Find and update the commentary button state
+            const buttons = document.querySelectorAll('.btn.toggle');
+            buttons.forEach(btn => {{
+                if (btn.textContent.includes('Commentary')) {{
+                    btn.classList.toggle('active', currentView.show_commentary);
+                }}
+            }});
         }}
 
         // Initial display update
@@ -607,7 +650,11 @@ def generate_index_html(suttas, nikaya_code, nikaya_name):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tipiṭaka Translations - {nikaya_name}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+
     <style>
+            @import url('https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
         :root {{
             --primary-color: #2c3e50;
             --secondary-color: #3498db;

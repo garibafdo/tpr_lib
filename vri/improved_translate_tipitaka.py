@@ -6,12 +6,13 @@ Improved Tipiṭaka Translation Script
 - Better progress tracking with tqdm
 """
 
-import os
+import os,sys
 import json
 import time
 import requests
 from tqdm import tqdm
 from typing import List, Dict, Any
+prefix = sys.argv[1] if len(sys.argv) > 1 else ""
 
 class ImprovedTipitakaTranslator:
     def __init__(self, data_dir: str = "."):
@@ -21,7 +22,7 @@ class ImprovedTipitakaTranslator:
     
     def load_translation_pairs(self) -> List[Dict]:
         """Load the translation pairs JSON"""
-        with open('translation_pairs.json', 'r', encoding='utf-8') as f:
+        with open(f'{prefix}translation_pairs.json', 'r', encoding='utf-8') as f:
             return json.load(f)
     
     def load_existing_translations(self, output_file: str):
@@ -130,7 +131,7 @@ class ImprovedTipitakaTranslator:
         
         return f"[Failed after {max_retries} attempts]"
     
-    def translate_all(self, output_file: str = "translated_texts.json", batch_size: int = 10):
+    def translate_all(self, output_file: str = f'{prefix}translated_texts.json', batch_size: int = 10):
         """Translate all texts with clean progress and smart resume"""
         pairs = self.load_translation_pairs()
         self.load_existing_translations(output_file)
@@ -205,7 +206,7 @@ def main():
     print("=" * 50)
     
     # Translate all texts
-    translator.translate_all("translated_texts.json",batch_size=3)
+    translator.translate_all(f'{prefix}translated_texts.json',batch_size=3)
 
 if __name__ == "__main__":
     main()

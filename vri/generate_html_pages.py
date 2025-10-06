@@ -5,13 +5,13 @@ Generic for DN/MN/SN/AN nikāyas
 """
 
 import json
-import os
+import os,sys
 import re
 from pathlib import Path
-
+prefix = sys.argv[1] if len(sys.argv) > 1 else ""
 def load_translations():
     """Load the translated texts JSON"""
-    with open('translated_texts.json', 'r', encoding='utf-8') as f:
+    with open(f'{prefix}translated_texts.json', 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def extract_sutta_info(sutta_name):
@@ -577,7 +577,8 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             document.querySelectorAll('.pali-text').forEach(element => {{
                 const originalText = element.getAttribute('data-pali');
                 if (currentView.devanagari) {{
-                    element.innerHTML = convertToDevanagari(originalText);
+                    const textOnly = originalText.replace(/<[^>]*>/g, ' ');
+                    element.innerHTML = convertToDevanagari(textOnly);
                 }} else {{
                     element.innerHTML = originalText;
                 }}

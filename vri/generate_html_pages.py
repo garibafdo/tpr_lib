@@ -674,7 +674,9 @@ def generate_sutta_html(sutta_name, paragraphs, all_suttas, nikaya_code, nikaya_
             document.querySelectorAll('.commentary-english-section').forEach(section => {{
                 section.style.display = currentView.commentary_english ? 'block' : 'none';
             }});
+
             // Handle Devanagari conversion
+                        // Handle Devanagari conversion
             document.querySelectorAll('.pali-text').forEach(element => {{
                 const originalText = element.getAttribute('data-pali');
                 if (currentView.devanagari) {{

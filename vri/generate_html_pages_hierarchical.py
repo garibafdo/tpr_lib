@@ -1430,6 +1430,30 @@ class HierarchicalHTMLGenerator:
             
             document.body.classList.toggle('devanagari-script', currentView.devanagari);
             updateDisplay();
+            // Keyboard shortcuts
+document.addEventListener('keydown', function(event) {{
+    if (event.ctrlKey) {{
+        if (event.key === 'ArrowRight') {{
+            // Next paragraph
+            const paragraphs = document.querySelectorAll('.paragraph');
+            const current = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+            let currentIndex = Array.from(paragraphs).findIndex(p => p.contains(current));
+            if (currentIndex < paragraphs.length - 1) {{
+                paragraphs[currentIndex + 1].scrollIntoView({{ behavior: 'smooth' }});
+            }}
+            event.preventDefault();
+        }} else if (event.key === 'ArrowLeft') {{
+            // Previous paragraph  
+            const paragraphs = document.querySelectorAll('.paragraph');
+            const current = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+            let currentIndex = Array.from(paragraphs).findIndex(p => p.contains(current));
+            if (currentIndex > 0) {{
+                paragraphs[currentIndex - 1].scrollIntoView({{ behavior: 'smooth' }});
+            }}
+            event.preventDefault();
+        }}
+    }}
+}});
         </script>
     </body>
     </html>

@@ -902,6 +902,11 @@ class HierarchicalHTMLGenerator:
         <title>{clean_name} - {nikaya_name}</title>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+            @media (min-width: 1200px) {{
+            .container {{
+                max-width: 95%;  /* Use 95% of screen width on large screens */
+            }}
+        }}
     
             :root {{
                 --primary-color: #2c3e50;
@@ -937,10 +942,10 @@ class HierarchicalHTMLGenerator:
             }}
     
             .container {{
-                max-width: 1000px;
-                margin: 0 auto;
-                padding: 1px;
-            }}
+    max-width: 1400px;  /* Increased from 1000px */
+    margin: 0 auto;
+    padding: 1px;
+}}
     
             .sutta-header {{
                 background: var(--card-bg);
@@ -1010,31 +1015,30 @@ class HierarchicalHTMLGenerator:
             }}
     
             .paragraph {{
-                position: relative;
-                background: var(--card-bg);
-                border-radius: var(--border-radius);
-                padding: 20px 20px 20px 50px;
-                margin-bottom: 15px;
-                box-shadow: var(--shadow);
-                transition: all 0.3s ease;
-                border-left: 3px solid var(--primary-color);
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 20px;
-            }}
-    
-            .mula-section {{
-                border-right: 1px solid #ecf0f1;
-                padding-right: 20px;
-            }}
-    
-            .commentary-section {{
-                background: #f5f5f5;
-                padding: 15px;
-                border-radius: 6px;
-                border-left: 3px solid #7f8c8d;
-            }}
-    
+    position: relative;
+    background: var(--card-bg);
+    border-radius: var(--border-radius);
+    padding: 20px 20px 20px 50px;
+    margin-bottom: 15px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+    border-left: 3px solid var(--primary-color);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;  /* Increased gap for better separation */
+}}
+
+.mula-section {{
+    border-right: 1px solid #ecf0f1;
+    padding-right: 30px;  /* Increased padding */
+}}
+
+.commentary-section {{
+    background: #f5f5f5;
+    padding: 20px;  /* Increased padding */
+    border-radius: 6px;
+    border-left: 3px solid #7f8c8d;
+}}
             .dark-mode .commentary-section {{
                 background: #3a3a3a;
                 border-left-color: #95a5a6;
@@ -1413,36 +1417,49 @@ class HierarchicalHTMLGenerator:
             }}
     
             function updateDisplay() {{
-                document.querySelectorAll('.mula-pali-section').forEach(section => {{
-                    section.style.display = currentView.mula_pali ? 'block' : 'none';
-                }});
-                document.querySelectorAll('.mula-english-section').forEach(section => {{
-                    section.style.display = currentView.mula_english ? 'block' : 'none';
-                }});
-                document.querySelectorAll('.commentary-pali-section').forEach(section => {{
-                    section.style.display = currentView.commentary_pali ? 'block' : 'none';
-                }});
-                document.querySelectorAll('.commentary-english-section').forEach(section => {{
-                    section.style.display = currentView.commentary_english ? 'block' : 'none';
-                }});
+    // Update view toggles
+    document.querySelectorAll('.mula-pali-section').forEach(section => {{
+        section.style.display = currentView.mula_pali ? 'block' : 'none';
+    }});
+    document.querySelectorAll('.mula-english-section').forEach(section => {{
+        section.style.display = currentView.mula_english ? 'block' : 'none';
+    }});
+    document.querySelectorAll('.commentary-pali-section').forEach(section => {{
+        section.style.display = currentView.commentary_pali ? 'block' : 'none';
+    }});
+    document.querySelectorAll('.commentary-english-section').forEach(section => {{
+        section.style.display = currentView.commentary_english ? 'block' : 'none';
+    }});
+
+    // Update button states - ADD THIS SECTION
+    const paliBtn = document.querySelector('.btn.toggle[onclick="toggleView(\\'mula_pali\\')"]');
+    const transBtn = document.querySelector('.btn.toggle[onclick="toggleView(\\'mula_english\\')"]');
+    const commPaliBtn = document.querySelector('.btn.toggle[onclick="toggleView(\\'commentary_pali\\')"]');
+    const commEngBtn = document.querySelector('.btn.toggle[onclick="toggleView(\\'commentary_english\\')"]');
     
-                document.querySelectorAll('.pali-text').forEach(element => {{
-                    const originalText = element.getAttribute('data-pali');
-                    if (currentView.devanagari) {{
-                        element.innerHTML = convertToDevanagariPreservingHTML(originalText);
-                    }} else {{
-                        element.innerHTML = originalText;
-                    }}
-                }});
-                document.querySelectorAll('.commentary-pali').forEach(element => {{
-                    const originalText = element.getAttribute('data-pali');
-                    if (currentView.devanagari) {{
-                        element.innerHTML = convertToDevanagariPreservingHTML(originalText);
-                    }} else {{
-                        element.innerHTML = originalText;
-                    }}
-                }});
-            }}
+    if (paliBtn) paliBtn.classList.toggle('active', currentView.mula_pali);
+    if (transBtn) transBtn.classList.toggle('active', currentView.mula_english);
+    if (commPaliBtn) commPaliBtn.classList.toggle('active', currentView.commentary_pali);
+    if (commEngBtn) commEngBtn.classList.toggle('active', currentView.commentary_english);
+
+    // Handle Devanagari conversion
+    document.querySelectorAll('.pali-text').forEach(element => {{
+        const originalText = element.getAttribute('data-pali');
+        if (currentView.devanagari) {{
+            element.innerHTML = convertToDevanagariPreservingHTML(originalText);
+        }} else {{
+            element.innerHTML = originalText;
+        }}
+    }});
+    document.querySelectorAll('.commentary-pali').forEach(element => {{
+        const originalText = element.getAttribute('data-pali');
+        if (currentView.devanagari) {{
+            element.innerHTML = convertToDevanagariPreservingHTML(originalText);
+        }} else {{
+            element.innerHTML = originalText;
+        }}
+    }});
+}}
     
             // Keyboard shortcuts
             document.addEventListener('keydown', function(event) {{

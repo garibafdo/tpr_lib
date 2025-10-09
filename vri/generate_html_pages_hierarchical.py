@@ -1260,10 +1260,10 @@ class HierarchicalHTMLGenerator:
     
         <script>
             let currentView = {{
-                mula_pali: true,
+                mula_pali: false,
                 mula_english: true,
                 commentary_pali: false,
-                commentary_english: false,
+                commentary_english: true,
                 devanagari: true
             }};
     

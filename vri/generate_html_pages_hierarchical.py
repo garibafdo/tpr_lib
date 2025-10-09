@@ -59,11 +59,14 @@ class HierarchicalHTMLGenerator:
         return None, sutta_name
     
     def escape_html(self, text: str) -> str:
-        """Escape HTML special characters"""
+        """Escape HTML special characters and clean XML tags"""
         if not text:
             return ""
         
-        # Escape basic HTML
+        # First remove XML tags but keep their content
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # Then escape basic HTML
         text = (text.replace('&', '&amp;')
                     .replace('<', '&lt;')
                     .replace('>', '&gt;')
@@ -612,34 +615,34 @@ class HierarchicalHTMLGenerator:
         display: grid;
         gap: 20px;
     }
-    
-    .paragraph {
-        position: relative;
-        background: var(--card-bg);
-        border-radius: var(--border-radius);
-        padding: 25px 25px 25px 70px;
-        box-shadow: var(--shadow);
-        border-left: 4px solid var(--primary-color);
-        transition: all 0.3s ease;
-    }
-    
+.paragraph {
+    position: relative;
+    background: var(--card-bg);
+    border-radius: var(--border-radius);
+    padding: 20px 20px 20px 50px;
+    margin-bottom: 15px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+    border-left: 3px solid var(--primary-color);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.paragraph-number {
+    position: absolute;
+    left: 15px;
+    top: 25px;
+    color: #666;
+    font-size: 0.9em;
+    font-weight: normal;
+}
+
+   
     .paragraph:hover {
         box-shadow: 0 6px 12px rgba(0,0,0,0.15);
     }
     
-    .paragraph-number {
-        position: absolute;
-        left: 20px;
-        top: 25px;
-        color: #666;
-        font-size: 0.9em;
-        font-weight: bold;
-        background: #f8f9fa;
-        padding: 4px 8px;
-        border-radius: 4px;
-        min-width: 30px;
-        text-align: center;
-    }
     
     .pali-text {
         font-size: 1.3em;
@@ -880,7 +883,7 @@ class HierarchicalHTMLGenerator:
         return structure   
     
     def generate_sutta_page(self, sutta_name: str, paragraphs: List, nikaya_code: str, nikaya_name: str):
-        """Generate individual sutta page - COMPLETE WORKING VERSION"""
+        """Generate individual sutta page - FIXED STRUCTURE"""
         sutta_num, clean_name = self.extract_sutta_info(sutta_name)
         
         # Create safe filename
@@ -1015,6 +1018,26 @@ class HierarchicalHTMLGenerator:
                 box-shadow: var(--shadow);
                 transition: all 0.3s ease;
                 border-left: 3px solid var(--primary-color);
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+            }}
+    
+            .mula-section {{
+                border-right: 1px solid #ecf0f1;
+                padding-right: 20px;
+            }}
+    
+            .commentary-section {{
+                background: #f5f5f5;
+                padding: 15px;
+                border-radius: 6px;
+                border-left: 3px solid #7f8c8d;
+            }}
+    
+            .dark-mode .commentary-section {{
+                background: #3a3a3a;
+                border-left-color: #95a5a6;
             }}
     
             .paragraph-number {{
@@ -1058,19 +1081,6 @@ class HierarchicalHTMLGenerator:
     
             .dark-mode .translation-text {{
                 color: #e8e8e8;
-            }}
-    
-            .commentary-section {{
-                background: #f5f5f5;
-                padding: 10px;
-                margin-top: 20px;
-                border-radius: 6px;
-                border-left: 3px solid #7f8c8d;
-            }}
-    
-            .dark-mode .commentary-section {{
-                background: #3a3a3a;
-                border-left-color: #95a5a6;
             }}
     
             .commentary-pali {{
@@ -1144,10 +1154,6 @@ class HierarchicalHTMLGenerator:
                 content: "✅";
             }}
     
-            .hidden {{
-                display: none;
-            }}
-    
             @media (max-width: 768px) {{
                 .container {{
                     padding: 10px;
@@ -1165,6 +1171,13 @@ class HierarchicalHTMLGenerator:
                 }}
                 .paragraph {{
                     padding: 20px 20px 20px 45px;
+                    grid-template-columns: 1fr;
+                }}
+                .mula-section {{
+                    border-right: none;
+                    padding-right: 0;
+                    border-bottom: 1px solid #ecf0f1;
+                    padding-bottom: 20px;
                 }}
                 .paragraph-number {{
                     left: 12px;
@@ -1188,7 +1201,7 @@ class HierarchicalHTMLGenerator:
             </div>
     
             <div class="navigation">
-                <a href="../nikayas/{nikaya_code}/index.html" class="nav-btn home-btn">← Back to {nikaya_name}</a>
+                <a href="../nikayas/{nikaya_code}/index.html" class="nav-btn home-btn">&larr; Back to {nikaya_name}</a>
             </div>
     
             <div class="controls">
@@ -1202,7 +1215,7 @@ class HierarchicalHTMLGenerator:
     
             <div id="content">
     '''
-        
+    
         # Add paragraphs
         for item in paragraphs:
             has_commentary = item.get('has_commentary', False) and item.get('commentary_pali')
@@ -1210,25 +1223,34 @@ class HierarchicalHTMLGenerator:
             html += f'''
                 <div class="paragraph">
                     <div class="paragraph-number">{item.get('paragraph_number', '')}</div>
-                    <div class="pali-text mula-pali-section" data-pali="{self.escape_html(item.get('mula_pali', ''))}">{self.escape_html(item.get('mula_pali', ''))}</div>
-                    <div class="translation-text mula-english-section">{self.escape_html(item.get('mula_english', ''))}</div>
+                    <div class="mula-section">
+                        <div class="pali-text mula-pali-section" data-pali="{self.escape_html(item.get('mula_pali', ''))}">{self.escape_html(item.get('mula_pali', ''))}</div>
+                        <div class="translation-text mula-english-section">{self.escape_html(item.get('mula_english', ''))}</div>
+                    </div>
+                    <div class="commentary-section">
             '''
-    
+            
             if has_commentary:
                 html += f'''
-                    <div class="commentary-section">
                         <div class="commentary-pali commentary-pali-section" data-pali="{self.escape_html(item.get('commentary_pali', ''))}">{self.escape_html(item.get('commentary_pali', ''))}</div>
                         <div class="commentary-english commentary-english-section">{self.escape_html(item.get('commentary_english', ''))}</div>
-                    </div>
+                '''
+            else:
+                html += f'''
+                        <div class="commentary-pali commentary-pali-section" data-pali=""></div>
+                        <div class="commentary-english commentary-english-section"></div>
                 '''
             
-            html += '</div>'
+            html += '''
+                    </div>
+                </div>
+            '''
     
         html += f'''
             </div>
     
             <div class="navigation">
-                <a href="../nikayas/{nikaya_code}/index.html" class="nav-btn home-btn">← Back to {nikaya_name}</a>
+                <a href="../nikayas/{nikaya_code}/index.html" class="nav-btn home-btn">&larr; Back to {nikaya_name}</a>
             </div>
         </div>
     
@@ -1268,116 +1290,114 @@ class HierarchicalHTMLGenerator:
             }}
     
             function convertToDevanagari(text) {{
-    if (!text) return text;
-    
-    text = text.toLowerCase();
-    
-    const consonants = {{
-        'k': 'क', 'kh': 'ख', 'g': 'ग', 'gh': 'घ', 'ṅ': 'ङ',
-        'c': 'च', 'ch': 'छ', 'j': 'ज', 'jh': 'झ', 'ñ': 'ञ',
-        'ṭ': 'ट', 'ṭh': 'ठ', 'ḍ': 'ड', 'ḍh': 'ढ', 'ṇ': 'ण',
-        't': 'त', 'th': 'थ', 'd': 'द', 'dh': 'ध', 'n': 'न',
-        'p': 'प', 'ph': 'फ', 'b': 'ब', 'bh': 'भ', 'm': 'म',
-        'y': 'य', 'r': 'र', 'l': 'ल', 'v': 'व', 
-        'ś': 'श', 'ṣ': 'ष', 's': 'स', 'h': 'ह'
-    }};
-    
-    const vowelSigns = {{
-        'a': '', 'ā': 'ा', 'i': 'ि', 'ī': 'ी', 'u': 'ु', 'ū': 'ू',
-        'e': 'े', 'o': 'ो'
-    }};
-    
-    const independentVowels = {{
-        'a': 'अ', 'ā': 'आ', 'i': 'इ', 'ī': 'ई', 'u': 'उ', 'ū': 'ऊ',
-        'e': 'ए', 'o': 'ओ'
-    }};
-    
-    let result = '';
-    let i = 0;
-    
-    while (i < text.length) {{
-        const char = text[i];
-        
-        // Handle special characters
-        if (char === 'ṃ' || char === 'ṁ') {{
-            result += 'ं';
-            i++;
-            continue;
-        }}
-        if (char === 'ḥ') {{
-            result += 'ः';
-            i++;
-            continue;
-        }}
-        if (' ,.?!–-""\\'\\'‘’"".'.includes(char)) {{
-            result += char;
-            i++;
-            continue;
-        }}
-        
-        // Check for consonants
-        let consonantFound = null;
-        let consonantLength = 0;
-        
-        // Try 2-character consonants first
-        if (i + 1 < text.length) {{
-            const twoChar = char + text[i + 1];
-            if (consonants[twoChar]) {{
-                consonantFound = consonants[twoChar];
-                consonantLength = 2;
-            }}
-        }}
-        
-        // Try single character consonants
-        if (!consonantFound && consonants[char]) {{
-            consonantFound = consonants[char];
-            consonantLength = 1;
-        }}
-        
-        if (consonantFound) {{
-            const nextIndex = i + consonantLength;
-            
-            // Check what comes after the consonant
-            if (nextIndex < text.length) {{
-                const nextChar = text[nextIndex];
+                if (!text) return text;
                 
-                // If followed by a vowel sign, use it
-                if (vowelSigns[nextChar] !== undefined) {{
-                    result += consonantFound + vowelSigns[nextChar];
-                    i += consonantLength + 1;
-                }} 
-                // If followed by another consonant or punctuation, no inherent 'a'
-                else if (consonants[nextChar] || ' ,.?!–-'.includes(nextChar)) {{
-                    result += consonantFound + '्'; // Add virama for doubled consonants
-                    i += consonantLength;
+                text = text.toLowerCase();
+                
+                const consonants = {{
+                    'k': 'क', 'kh': 'ख', 'g': 'ग', 'gh': 'घ', 'ṅ': 'ङ',
+                    'c': 'च', 'ch': 'छ', 'j': 'ज', 'jh': 'झ', 'ñ': 'ञ',
+                    'ṭ': 'ट', 'ṭh': 'ठ', 'ḍ': 'ड', 'ḍh': 'ढ', 'ṇ': 'ण',
+                    't': 'त', 'th': 'थ', 'd': 'द', 'dh': 'ध', 'n': 'न',
+                    'p': 'प', 'ph': 'फ', 'b': 'ब', 'bh': 'भ', 'm': 'म',
+                    'y': 'य', 'r': 'र', 'l': 'ल', 'v': 'व', 
+                    'ś': 'श', 'ṣ': 'ष', 's': 'स', 'h': 'ह'
+                }};
+                
+                const vowelSigns = {{
+                    'a': '', 'ā': 'ा', 'i': 'ि', 'ī': 'ी', 'u': 'ु', 'ū': 'ू',
+                    'e': 'े', 'o': 'ो'
+                }};
+                
+                const independentVowels = {{
+                    'a': 'अ', 'ā': 'आ', 'i': 'इ', 'ī': 'ई', 'u': 'उ', 'ū': 'ऊ',
+                    'e': 'ए', 'o': 'ओ'
+                }};
+                
+                let result = '';
+                let i = 0;
+                
+                while (i < text.length) {{
+                    const char = text[i];
+                    
+                    // Handle special characters
+                    if (char === 'ṃ' || char === 'ṁ') {{
+                        result += 'ं';
+                        i++;
+                        continue;
+                    }}
+                    if (char === 'ḥ') {{
+                        result += 'ः';
+                        i++;
+                        continue;
+                    }}
+                    if (' ,.?!–-""\\'\\'‘’"".'.includes(char)) {{
+                        result += char;
+                        i++;
+                        continue;
+                    }}
+                    
+                    // Check for consonants
+                    let consonantFound = null;
+                    let consonantLength = 0;
+                    
+                    // Try 2-character consonants first
+                    if (i + 1 < text.length) {{
+                        const twoChar = char + text[i + 1];
+                        if (consonants[twoChar]) {{
+                            consonantFound = consonants[twoChar];
+                            consonantLength = 2;
+                        }}
+                    }}
+                    
+                    // Try single character consonants
+                    if (!consonantFound && consonants[char]) {{
+                        consonantFound = consonants[char];
+                        consonantLength = 1;
+                    }}
+                    
+                    if (consonantFound) {{
+                        const nextIndex = i + consonantLength;
+                        
+                        // Check what comes after the consonant
+                        if (nextIndex < text.length) {{
+                            const nextChar = text[nextIndex];
+                            
+                            // If followed by a vowel sign, use it
+                            if (vowelSigns[nextChar] !== undefined) {{
+                                result += consonantFound + vowelSigns[nextChar];
+                                i += consonantLength + 1;
+                            }} 
+                            // If followed by another consonant or punctuation, no inherent 'a'
+                            else if (consonants[nextChar] || ' ,.?!–-'.includes(nextChar)) {{
+                                result += consonantFound + '्';
+                                i += consonantLength;
+                            }}
+                            // Otherwise, assume inherent 'a'
+                            else {{
+                                result += consonantFound;
+                                i += consonantLength;
+                            }}
+                        }} else {{
+                            result += consonantFound;
+                            i += consonantLength;
+                        }}
+                        continue;
+                    }}
+                    
+                    // Check for independent vowels
+                    if (independentVowels[char]) {{
+                        result += independentVowels[char];
+                        i++;
+                        continue;
+                    }}
+                    
+                    result += char;
+                    i++;
                 }}
-                // Otherwise, assume inherent 'a'
-                else {{
-                    result += consonantFound;
-                    i += consonantLength;
-                }}
-            }} else {{
-                // End of text - no inherent 'a'
-                result += consonantFound;
-                i += consonantLength;
+                
+                return result;
             }}
-            continue;
-        }}
-        
-        // Check for independent vowels
-        if (independentVowels[char]) {{
-            result += independentVowels[char];
-            i++;
-            continue;
-        }}
-        
-        // Keep anything else as-is
-        result += char;
-        i++;
-    }}
-    
-    return result;
-}}
     
             function convertToDevanagariPreservingHTML(text) {{
                 const parts = text.split(/(<[^>]*>)/);
@@ -1424,44 +1444,42 @@ class HierarchicalHTMLGenerator:
                 }});
             }}
     
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(event) {{
+                if (event.ctrlKey) {{
+                    if (event.key === 'ArrowRight') {{
+                        const paragraphs = document.querySelectorAll('.paragraph');
+                        const current = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+                        let currentIndex = Array.from(paragraphs).findIndex(p => p.contains(current));
+                        if (currentIndex < paragraphs.length - 1) {{
+                            paragraphs[currentIndex + 1].scrollIntoView({{ behavior: 'smooth' }});
+                        }}
+                        event.preventDefault();
+                    }} else if (event.key === 'ArrowLeft') {{
+                        const paragraphs = document.querySelectorAll('.paragraph');
+                        const current = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+                        let currentIndex = Array.from(paragraphs).findIndex(p => p.contains(current));
+                        if (currentIndex > 0) {{
+                            paragraphs[currentIndex - 1].scrollIntoView({{ behavior: 'smooth' }});
+                        }}
+                        event.preventDefault();
+                    }}
+                }}
+            }});
+    
             if (localStorage.getItem('darkMode') === 'true') {{
                 document.body.classList.add('dark-mode');
             }}
             
             document.body.classList.toggle('devanagari-script', currentView.devanagari);
             updateDisplay();
-            // Keyboard shortcuts
-document.addEventListener('keydown', function(event) {{
-    if (event.ctrlKey) {{
-        if (event.key === 'ArrowRight') {{
-            // Next paragraph
-            const paragraphs = document.querySelectorAll('.paragraph');
-            const current = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
-            let currentIndex = Array.from(paragraphs).findIndex(p => p.contains(current));
-            if (currentIndex < paragraphs.length - 1) {{
-                paragraphs[currentIndex + 1].scrollIntoView({{ behavior: 'smooth' }});
-            }}
-            event.preventDefault();
-        }} else if (event.key === 'ArrowLeft') {{
-            // Previous paragraph  
-            const paragraphs = document.querySelectorAll('.paragraph');
-            const current = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
-            let currentIndex = Array.from(paragraphs).findIndex(p => p.contains(current));
-            if (currentIndex > 0) {{
-                paragraphs[currentIndex - 1].scrollIntoView({{ behavior: 'smooth' }});
-            }}
-            event.preventDefault();
-        }}
-    }}
-}});
         </script>
     </body>
     </html>
     '''
         
         with open(self.output_dir / "suttas" / filename, 'w', encoding='utf-8') as f:
-            f.write(html)
-        
+            f.write(html)       
     def generate_all(self):
         """Generate the complete hierarchical HTML system - FIXED"""
         print("Detecting available nikayas...")

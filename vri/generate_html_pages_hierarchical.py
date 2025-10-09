@@ -616,19 +616,8 @@ class HierarchicalHTMLGenerator:
         display: grid;
         gap: 20px;
     }
-.paragraph {
-    position: relative;
-    background: var(--card-bg);
-    border-radius: var(--border-radius);
-    padding: 20px 20px 20px 50px;
-    margin-bottom: 15px;
-    box-shadow: var(--shadow);
-    transition: all 0.3s ease;
-    border-left: 3px solid var(--primary-color);
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-}
+
+
 
 .paragraph-number {
     position: absolute;
@@ -1029,12 +1018,36 @@ class HierarchicalHTMLGenerator:
     gap: 30px;  /* Increased gap for better separation */
 }}
 
-.mula-section {{
-    border-right: 1px solid #ecf0f1;
-    padding-right: 30px;  /* Increased padding */
+
+/* Only add border when commentary is visible */
+
+.paragraph {{
+    position: relative;
+    background: var(--card-bg);
+    border-radius: var(--border-radius);
+    padding: 20px 20px 20px 50px;
+    margin-bottom: 15px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+    border-left: 3px solid var(--primary-color);
+    display: block; /* Default: single column as block layout */
+    gap: 20px;
 }}
 
-.commentary-section {{
+.paragraph.with-commentary {{
+    display: grid; /* Only use grid when commentary is visible */
+    grid-template-columns: 1fr 1fr;
+}}
+
+.mula-section {{
+    padding-right: 0; /* No border by default */
+}}
+
+.paragraph.with-commentary .mula-section {{
+    border-right: 1px solid #ecf0f1;
+    padding-right: 30px;
+}}
+commentary-section {{
     background: #f5f5f5;
     padding: 20px;  /* Increased padding */
     border-radius: 6px;
@@ -1417,7 +1430,7 @@ class HierarchicalHTMLGenerator:
                 return result;
             }}
     
-            function updateDisplay() {{
+  function updateDisplay() {{
     // Update view toggles
     document.querySelectorAll('.mula-pali-section').forEach(section => {{
         section.style.display = currentView.mula_pali ? 'block' : 'none';
@@ -1432,7 +1445,17 @@ class HierarchicalHTMLGenerator:
         section.style.display = currentView.commentary_english ? 'block' : 'none';
     }});
 
-    // Update button states - ADD THIS SECTION
+    // DEBUG: Check what's happening
+    console.log('Commentary visibility:', currentView.commentary_pali, currentView.commentary_english);
+    
+    // FIX: Check if ANY commentary is visible (regardless of content)
+    document.querySelectorAll('.paragraph').forEach(paragraph => {{
+        const isCommentaryVisible = currentView.commentary_pali || currentView.commentary_english;
+        console.log('Setting with-commentary:', isCommentaryVisible);
+        paragraph.classList.toggle('with-commentary', isCommentaryVisible);
+    }});
+
+    // Update button states
     const paliBtn = document.querySelector('.btn.toggle[onclick="toggleView(\\'mula_pali\\')"]');
     const transBtn = document.querySelector('.btn.toggle[onclick="toggleView(\\'mula_english\\')"]');
     const commPaliBtn = document.querySelector('.btn.toggle[onclick="toggleView(\\'commentary_pali\\')"]');

@@ -279,6 +279,8 @@ class HierarchicalHTMLGenerator:
         background: var(--bg-color);
         color: var(--text-color);
         line-height: 1.6;
+        -webkit-font-smoothing: antialiased; 
+
     }
     
     .container {
@@ -639,8 +641,9 @@ class HierarchicalHTMLGenerator:
         margin-bottom: 20px;
         color: #2c3e50;
         line-height: 1.8;
-        font-family: 'Times New Roman', serif;
+        font-family: 'Gentium Plus', 'Heuristica', 'Georgia', serif;
         font-weight: normal;
+        text-shadow: 0 0 0.1px currentColor; 
     }
     
     .translation {
@@ -667,7 +670,7 @@ class HierarchicalHTMLGenerator:
         color: #2c3e50;
         font-style: italic;
         line-height: 1.8;
-        font-family: 'Times New Roman', serif;
+        font-family: 'Gentium Plus', 'Heuristica', 'Georgia', serif;
     }
     
     .commentary-english {
@@ -892,6 +895,8 @@ class HierarchicalHTMLGenerator:
         <title>{clean_name} - {nikaya_name}</title>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Sanskrit&display=swap');
+
             @media (min-width: 1200px) {{
             .container {{
                 max-width: 95%;  /* Use 95% of screen width on large screens */
@@ -1077,11 +1082,16 @@ commentary-section {{
                 color: #2c3e50;
                 font-weight: bold;
                 line-height: 1.8;
-                font-family: 'Times New Roman', 'Gentium Plus', serif;
+                font-family: 'Gentium Plus', 'Heuristica', 'Georgia', serif;
             }}
     
             .devanagari-script .pali-text {{
-                font-family: sans-serif;
+                font-family: 'Tiro Devanagari Sanskrit', 'Noto Sans Devanagari',
+                  text-rendering: optimizeLegibility; 
+    font-feature-settings: "kern" 1, "liga" 1, "ccmp" 1; 
+     /* Use a very small positive value (e.g., 0.01em to 0.03em). */
+    letter-spacing: 0.010em; 
+    line-height: 1.7;
             }}
     
             .dark-mode .pali-text {{
@@ -1107,11 +1117,17 @@ commentary-section {{
                 color: #2c3e50;
                 font-style: italic;
                 line-height: 1.8;
-                font-family: 'Times New Roman', 'Gentium Plus', serif;
+                font-family: 'Gentium Plus', 'Heuristica', 'Georgia', serif;
             }}
     
             .devanagari-script .commentary-pali {{
-                font-family: sans-serif;
+                font-family: 'Tiro Devanagari Sanskrit', 'Noto Sans Devanagari',
+                  text-rendering: optimizeLegibility; 
+    font-feature-settings: "kern" 1, "liga" 1, "ccmp" 1; 
+    /* Use a very small positive value (e.g., 0.01em to 0.03em). */
+    letter-spacing: 0.010em; 
+    line-height: 1.7;
+     
             }}
     
             .dark-mode .commentary-pali {{

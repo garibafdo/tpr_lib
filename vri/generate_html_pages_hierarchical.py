@@ -1080,6 +1080,7 @@ commentary-section {{
                 font-size: 1.3em;
                 margin-bottom: 20px;
                 color: #2c3e50;
+                font-weight: normal;
                 line-height: 1.8;
                 font-family: 'Gentium Plus', 'Heuristica', 'Georgia', serif;
             }}
@@ -1090,7 +1091,6 @@ commentary-section {{
     font-feature-settings: "kern" 1, "liga" 1, "ccmp" 1; 
      /* Use a very small positive value (e.g., 0.01em to 0.03em). */
     letter-spacing: 0.010em; 
-    line-height: 1.7;
             }}
     
             .dark-mode .pali-text {{
@@ -1125,7 +1125,6 @@ commentary-section {{
     font-feature-settings: "kern" 1, "liga" 1, "ccmp" 1; 
     /* Use a very small positive value (e.g., 0.01em to 0.03em). */
     letter-spacing: 0.010em; 
-    line-height: 1.7;
      
             }}
     

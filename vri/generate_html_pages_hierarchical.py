@@ -1274,15 +1274,29 @@ commentary-section {{
     
         <script>
             let currentView = {{
-                mula_pali: false,
-                mula_english: true,
-                commentary_pali: false,
-                commentary_english: true,
-                devanagari: true
             }};
+            
+            function loadAllSettings() {{
+    // Load view settings like dark mode
+    const savedViews = localStorage.getItem('paliReaderSettings');
+    currentView = savedViews ? JSON.parse(savedViews) : {{
+        mula_pali: true,
+        mula_english: true,
+        commentary_pali: false,
+        commentary_english: false,
+        devanagari: true
+    }};
+    updateDisplay();
+    }}
+            
+            // Save settings when changed
+            function saveSettings() {{
+                localStorage.setItem('paliReaderSettings', JSON.stringify(currentView));
+            }}
     
             function toggleView(type) {{
                 currentView[type] = !currentView[type];
+                
                 const buttons = document.querySelectorAll('.btn.toggle');
                 buttons.forEach(btn => {{
                     let btnText = btn.textContent.toLowerCase();
@@ -1291,7 +1305,8 @@ commentary-section {{
                         btn.classList.toggle('active', currentView[type]);
                     }}
                 }});
-                updateDisplay();
+                  saveSettings();
+                  updateDisplay();
             }}
     
             function toggleScript() {{
@@ -1511,6 +1526,9 @@ commentary-section {{
             if (localStorage.getItem('darkMode') === 'true') {{
                 document.body.classList.add('dark-mode');
             }}
+            
+            document.addEventListener('DOMContentLoaded', loadAllSettings);
+
             
             document.body.classList.toggle('devanagari-script', currentView.devanagari);
             updateDisplay();

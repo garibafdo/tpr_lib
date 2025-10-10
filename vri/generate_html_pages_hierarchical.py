@@ -1080,7 +1080,6 @@ commentary-section {{
                 font-size: 1.3em;
                 margin-bottom: 20px;
                 color: #2c3e50;
-                font-weight: bold;
                 line-height: 1.8;
                 font-family: 'Gentium Plus', 'Heuristica', 'Georgia', serif;
             }}

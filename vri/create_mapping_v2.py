@@ -338,8 +338,8 @@ def main():
     """Process DN2 vagga (s02 series)"""
     # ~ sutta_prefix = "s0101"  # DN2 vagga (DN14-DN23)
     # ~ output_prefix = "dn1_vagga"  # Separate from DN1 files
-    sutta_prefix = "s0203"  # DN2 vagga (DN14-DN23)
-    output_prefix = "mn3"  # Separate from DN1 files
+    sutta_prefix = "s0301"  # DN2 vagga (DN14-DN23)
+    output_prefix = "sn1"  # Separate from DN1 files
     
     process_vagga_files(sutta_prefix, output_prefix)
 
